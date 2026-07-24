@@ -83,6 +83,7 @@ model Board {
   updatedAt DateTime @updatedAt
 
   trainingDayBoards TrainingDayBoard[]
+  assignments       BoardAssignment[]
   sessions          BoardSession[]
 }
 
