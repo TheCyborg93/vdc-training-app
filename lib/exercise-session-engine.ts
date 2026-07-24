@@ -19,6 +19,8 @@ export type PlayerExerciseState = {
   hits?: number;
   attempts?: number;
   successes?: number;
+  startedAt?: number;
+  deadlineAt?: number;
 };
 
 function text(exercise: ExerciseDefinition) {
@@ -47,14 +49,21 @@ export function detectExerciseKind(exercise: ExerciseDefinition): string {
   return "CUSTOM";
 }
 
+function configuredTimeState(exercise: ExerciseDefinition) {
+  if (exercise.completionMode !== "TIME_LIMIT" || !exercise.completionValue || exercise.completionValue <= 0) return {};
+  const startedAt = Date.now();
+  return { startedAt, deadlineAt: startedAt + exercise.completionValue * 60_000 };
+}
+
 export function createInitialExerciseState(exercise: ExerciseDefinition): PlayerExerciseState {
   const kind = detectExerciseKind(exercise);
-  if (kind === "BOB27") return { kind, visit: 1, completed: false, score: 27, targetIndex: 0, target: "D1", dartsThrown: 0, hits: 0 };
-  if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0 };
-  if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0 };
-  if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0 };
-  if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0 };
-  return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0 };
+  const timeState = configuredTimeState(exercise);
+  if (kind === "BOB27") return { kind, visit: 1, completed: false, score: 27, targetIndex: 0, target: "D1", dartsThrown: 0, hits: 0, ...timeState };
+  if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0, ...timeState };
+  if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0, ...timeState };
+  if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0, ...timeState };
+  if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0, ...timeState };
+  return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0, ...timeState };
 }
 
 function number(value: unknown, fallback = 0) {
@@ -62,17 +71,24 @@ function number(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function withConfiguredCompletion(exercise: ExerciseDefinition, state: PlayerExerciseState) {
+function withConfiguredCompletion(exercise: ExerciseDefinition, state: PlayerExerciseState, forceTimeout = false) {
   const mode = exercise.completionMode ?? "ENGINE_DEFAULT";
   const value = exercise.completionValue ?? 0;
   if (mode === "VISIT_LIMIT" && value > 0 && state.visit > value) return { ...state, completed: true };
   if (mode === "DART_LIMIT" && value > 0 && (state.dartsThrown ?? 0) >= value) return { ...state, completed: true };
+  if (mode === "TIME_LIMIT" && value > 0 && (forceTimeout || (state.deadlineAt != null && Date.now() >= state.deadlineAt))) return { ...state, completed: true };
   return state;
 }
 
 export function applyVisit(exercise: ExerciseDefinition, state: PlayerExerciseState, raw: Record<string, unknown>) {
   const next = { ...state, visit: state.visit + 1 };
   const visitValue: Record<string, unknown> = { ...raw, visit: state.visit, target: state.target, stateBefore: state };
+  const forceTimeout = Boolean(raw.timedOut);
+
+  if (forceTimeout) {
+    const finalState = withConfiguredCompletion(exercise, next, true);
+    return { nextState: finalState, visitValue: { ...visitValue, timedOut: true }, calculatedScore: null, playerFinished: finalState.completed };
+  }
 
   if (state.kind === "BOB27") {
     const hits = Math.max(0, Math.min(3, Math.trunc(number(raw.hits))));
