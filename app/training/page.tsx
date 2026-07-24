@@ -85,6 +85,20 @@ export default function LiveTrainingPage() {
     finally { setStarting(false); }
   }
 
+  async function undoLastResult() {
+    if (!session) return;
+    if (!window.confirm("Die letzte Aufnahme an diesem Board wirklich rückgängig machen? Spieler, Ziel und Punktestand werden zurückgesetzt.")) return;
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", boardSessionId: session.id }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht rückgängig gemacht werden.");
+      setMessage("Letzte Aufnahme wurde rückgängig gemacht. Der vorherige Spieler und Übungsstand wurden wiederhergestellt.");
+      await loadTraining();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Rückgängig fehlgeschlagen."); }
+    finally { setSaving(false); }
+  }
+
   async function saveResult(value: Record<string, unknown>) {
     if (!session) return;
     setSaving(true); setMessage("");
@@ -109,7 +123,7 @@ export default function LiveTrainingPage() {
     <main className={`${styles.root} dashboard-page`}>
       <section className="dashboard-heading"><div><div className="eyebrow">Live-Training</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div><span className="status">{training.status === "RUNNING" ? "Läuft" : training.status === "COMPLETED" ? "Beendet" : "Veröffentlicht"}</span></section>
       <section className="live-training-layout">
-        <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{message && <p className="form-message">{message}</p>}</aside>
+        <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{session?.status === "RUNNING" && <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>}{message && <p className="form-message">{message}</p>}</aside>
         <section>
           <div className="section-heading"><div><span className="eyebrow">Zufällige Reihenfolge</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
           <div className="live-player-list">{orderedPlayers.map((player, index) => {
