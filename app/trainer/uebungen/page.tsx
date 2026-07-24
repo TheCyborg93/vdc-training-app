@@ -18,6 +18,9 @@ type Exercise = {
   funFactor: number;
   learningCurve: number;
   resultType: string;
+  engine: string;
+  completionMode: string;
+  completionValue: number | null;
   tagsJson: unknown;
   variantsJson: unknown;
   favorite: boolean;
@@ -30,15 +33,31 @@ const resultTypes = [
   ["HITS_0_TO_3", "Treffer 0–3"], ["SCORE_0_TO_180", "Punkte 0–180"], ["CHECKOUT", "Checkout"],
   ["LEGS", "Legs"], ["TIME_BASED", "Zeitbasiert"], ["BOOLEAN", "Erfolg / Misserfolg"], ["CUSTOM", "Individuell"]
 ];
+const engines = [
+  ["AUTO", "Automatisch erkennen"], ["BOB27", "Bob’s 27"], ["AROUND_CLOCK", "Around the Clock"],
+  ["AROUND_DOUBLES", "Around the Clock – Doppel"], ["AROUND_TREBLES", "Around the Clock – Triple"],
+  ["X01", "301 / 501 / X01"], ["CHECKOUT_LADDER", "Checkout-Leiter"], ["SCORING", "Scoring"],
+  ["SHANGHAI", "Shanghai"], ["JDC_CHALLENGE", "JDC Challenge"], ["DOUBLES_ROUNDS", "Doppelrunden"],
+  ["BULL_ROUNDS", "Bulltraining"], ["HIT_ROUNDS", "Trefferübung"], ["TIME_BASED", "Zeittraining"], ["CUSTOM", "Eigene Übung"]
+];
+const completionModes = [
+  ["ENGINE_DEFAULT", "Nach den Regeln der Übung"], ["TARGET_REACHED", "Wenn das Ziel erreicht ist"],
+  ["VISIT_LIMIT", "Nach einer Anzahl Aufnahmen"], ["DART_LIMIT", "Nach einer Anzahl Darts"],
+  ["TIME_LIMIT", "Nach einer Zeit in Minuten"], ["MANUAL", "Manuell beenden"]
+];
 
 const emptyForm = {
   name: "", shortDescription: "", description: "", instructions: "", materials: "Dartboard, drei Darts und Ergebniserfassung", trainerNotes: "",
   defaultMinutes: "15", minPlayers: "1", maxPlayers: "", difficulty: "5", intensity: "5", funFactor: "5", learningCurve: "5",
-  resultType: "CUSTOM", categories: [] as string[], tags: "", variants: ""
+  resultType: "CUSTOM", engine: "AUTO", completionMode: "ENGINE_DEFAULT", completionValue: "", categories: [] as string[], tags: "", variants: ""
 };
 
 function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
+}
+
+function optionLabel(options: string[][], value: string) {
+  return options.find(([key]) => key === value)?.[1] ?? value;
 }
 
 export default function ExercisesPage() {
@@ -65,9 +84,7 @@ export default function ExercisesPage() {
       setAvailableCategories([...new Set([...fallbackCategories, ...names])].sort());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Übungen konnten nicht geladen werden.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
 
   useEffect(() => { void load(); }, []);
@@ -77,10 +94,13 @@ export default function ExercisesPage() {
     return items.filter((item) => {
       const categories = item.categories.map((entry) => entry.category.name);
       const tags = stringList(item.tagsJson);
-      const matchesSearch = !term || [item.name, item.shortDescription, item.description, ...categories, ...tags].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
+      const matchesSearch = !term || [item.name, item.shortDescription, item.description, item.engine, ...categories, ...tags].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
       return matchesSearch && (categoryFilter === "ALLE" || categories.includes(categoryFilter)) && (!favoritesOnly || item.favorite) && (!activeOnly || item.active);
     });
   }, [items, search, categoryFilter, favoritesOnly, activeOnly]);
+
+  const completionNeedsValue = ["VISIT_LIMIT", "DART_LIMIT", "TIME_LIMIT"].includes(form.completionMode);
+  const completionUnit = form.completionMode === "VISIT_LIMIT" ? "Aufnahmen" : form.completionMode === "DART_LIMIT" ? "Darts" : "Minuten";
 
   function toggleCategory(name: string) {
     setForm((current) => ({ ...current, categories: current.categories.includes(name) ? current.categories.filter((item) => item !== name) : [...current.categories, name] }));
@@ -99,7 +119,7 @@ export default function ExercisesPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Speichern fehlgeschlagen.");
-      setMessage(editingId ? "Übung aktualisiert." : "Übung hinzugefügt.");
+      setMessage(editingId ? "Übung und Regelwerk aktualisiert." : "Übung mit Regelwerk hinzugefügt.");
       setForm(emptyForm); setEditingId(null); await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Speichern fehlgeschlagen.");
@@ -112,7 +132,8 @@ export default function ExercisesPage() {
       name: item.name, shortDescription: item.shortDescription ?? "", description: item.description, instructions: item.instructions ?? "",
       materials: item.materials ?? "", trainerNotes: item.trainerNotes ?? "", defaultMinutes: String(item.defaultMinutes), minPlayers: String(item.minPlayers),
       maxPlayers: item.maxPlayers == null ? "" : String(item.maxPlayers), difficulty: String(item.difficulty), intensity: String(item.intensity),
-      funFactor: String(item.funFactor), learningCurve: String(item.learningCurve), resultType: item.resultType,
+      funFactor: String(item.funFactor), learningCurve: String(item.learningCurve), resultType: item.resultType, engine: item.engine ?? "AUTO",
+      completionMode: item.completionMode ?? "ENGINE_DEFAULT", completionValue: item.completionValue == null ? "" : String(item.completionValue),
       categories: item.categories.map((entry) => entry.category.name), tags: stringList(item.tagsJson).join(", "), variants: stringList(item.variantsJson).join("\n")
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -134,12 +155,10 @@ export default function ExercisesPage() {
 
   return (
     <main className="dashboard-page">
-      <section className="dashboard-heading">
-        <div><div className="eyebrow">Trainerbereich</div><h1>Übungskatalog V2</h1><p>Trainingsspiele durchsuchen, bewerten, favorisieren und für Pläne verwenden.</p></div>
-      </section>
+      <section className="dashboard-heading"><div><div className="eyebrow">Trainerbereich</div><h1>Übungskatalog 2.0</h1><p>Jede Übung erhält eine feste Regel-Engine und eine eindeutige Abschlussbedingung.</p></div></section>
 
       <section className="exercise-toolbar card">
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Übung, Ziel oder Tag suchen …" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Übung, Engine, Ziel oder Tag suchen …" />
         <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}><option value="ALLE">Alle Kategorien</option>{availableCategories.map((name) => <option key={name}>{name}</option>)}</select>
         <label className="check-chip"><input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />Nur Favoriten</label>
         <label className="check-chip"><input type="checkbox" checked={activeOnly} onChange={(event) => setActiveOnly(event.target.checked)} />Nur aktive</label>
@@ -163,7 +182,16 @@ export default function ExercisesPage() {
             <label>Min. Spieler<input type="number" min="1" value={form.minPlayers} onChange={(event) => setForm({ ...form, minPlayers: event.target.value })} /></label>
             <label>Max. Spieler<input type="number" min="1" value={form.maxPlayers} onChange={(event) => setForm({ ...form, maxPlayers: event.target.value })} placeholder="offen" /></label>
           </div>
-          <label>Ergebnisart<select value={form.resultType} onChange={(event) => setForm({ ...form, resultType: event.target.value })}>{resultTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+
+          <section className="card" style={{ padding: 18 }}>
+            <div className="eyebrow">Ergebnis- und Regelwerk</div>
+            <label>Übungs-Engine<select value={form.engine} onChange={(event) => setForm({ ...form, engine: event.target.value })}>{engines.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>Ergebnisart<select value={form.resultType} onChange={(event) => setForm({ ...form, resultType: event.target.value })}>{resultTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>Abschlussbedingung<select value={form.completionMode} onChange={(event) => setForm({ ...form, completionMode: event.target.value, completionValue: ["VISIT_LIMIT", "DART_LIMIT", "TIME_LIMIT"].includes(event.target.value) ? form.completionValue : "" })}>{completionModes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            {completionNeedsValue && <label>Anzahl {completionUnit}<input type="number" min="1" value={form.completionValue} onChange={(event) => setForm({ ...form, completionValue: event.target.value })} required /></label>}
+            <p className="visit-help">Bei „Nach den Regeln der Übung“ steuert die ausgewählte Engine das Ende, z. B. Bob’s 27 nach DBull oder bei 0 Punkten.</p>
+          </section>
+
           <label>Tags, mit Komma getrennt<input value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="Doppel, Druck, Anfänger" /></label>
           <label>Varianten, eine pro Zeile<textarea value={form.variants} onChange={(event) => setForm({ ...form, variants: event.target.value })} /></label>
           <fieldset className="category-fieldset"><legend>Kategorien</legend><div className="category-grid">{availableCategories.map((name) => <label className="check-chip" key={name}><input type="checkbox" checked={form.categories.includes(name)} onChange={() => toggleCategory(name)} />{name}</label>)}</div></fieldset>
@@ -179,7 +207,7 @@ export default function ExercisesPage() {
               <div className="player-title-row"><strong>{item.name}</strong><span className={item.active ? "status" : "status status-muted"}>{item.active ? "Aktiv" : "Inaktiv"}</span></div>
               <p>{item.shortDescription || item.description}</p>
               <div className="exercise-ratings"><span>Schwere {item.difficulty}/10</span><span>Intensität {item.intensity}/10</span><span>Spaß {item.funFactor}/10</span><span>Lernen {item.learningCurve}/10</span></div>
-              <div className="category-tags">{item.categories.map((entry) => <span key={entry.category.name}>{entry.category.name}</span>)}</div>
+              <div className="category-tags"><span>{optionLabel(engines, item.engine ?? "AUTO")}</span><span>{optionLabel(completionModes, item.completionMode ?? "ENGINE_DEFAULT")}{item.completionValue ? `: ${item.completionValue}` : ""}</span>{item.categories.map((entry) => <span key={entry.category.name}>{entry.category.name}</span>)}</div>
               <div className="exercise-meta">{stringList(item.tagsJson).slice(0, 4).map((tag) => <span key={tag}>#{tag}</span>)}</div>
               <div className="player-actions"><button onClick={() => edit(item)}>Bearbeiten</button><button onClick={() => void patch(item, { active: !item.active })}>{item.active ? "Deaktivieren" : "Aktivieren"}</button><button className="danger-link" onClick={() => void remove(item)}>Entfernen</button></div>
             </article>)}
