@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       where: { trainingDayId: session.trainingDayId, boardId: session.boardId },
       orderBy: { position: "asc" },
     });
-    const validPlayerIds = assignments.map((item) => item.playerId);
+    const validPlayerIds: number[] = assignments.map((item) => item.playerId);
     const progress = readProgress(session.randomOrderJson);
 
     if (action === "pause") {
@@ -95,8 +95,10 @@ export async function POST(request: Request) {
     }
 
     if (action === "reorder") {
-      const requested = Array.isArray(body.order) ? body.order.map(Number).filter(Number.isInteger) : [];
-      if (requested.length !== validPlayerIds.length || new Set(requested).size !== requested.length || requested.some((id) => !validPlayerIds.includes(id))) {
+      const requested: number[] = Array.isArray(body.order)
+        ? body.order.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value))
+        : [];
+      if (requested.length !== validPlayerIds.length || new Set(requested).size !== requested.length || requested.some((id: number) => !validPlayerIds.includes(id))) {
         return NextResponse.json({ error: "Die neue Reihenfolge muss alle Spieler des Boards genau einmal enthalten." }, { status: 400 });
       }
       const currentPlayerId = progress.order[progress.playerIndex];
@@ -124,7 +126,7 @@ export async function POST(request: Request) {
 
         const order = shuffle(validPlayerIds);
         const exercise = exercises[nextExerciseIndex].exercise;
-        const playerStates = Object.fromEntries(order.map((playerId) => [String(playerId), createInitialExerciseState(exercise)]));
+        const playerStates = Object.fromEntries(order.map((playerId: number) => [String(playerId), createInitialExerciseState(exercise)]));
         const nextProgress: ProgressState = { order, exerciseIndex: nextExerciseIndex, playerIndex: 0, roundNumber: progress.roundNumber + 1, playerStates };
         await tx.boardSession.update({
           where: { id: session.id },
