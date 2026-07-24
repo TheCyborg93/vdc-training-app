@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import "./training-plans.module.css";
 
 type Exercise = {
   id: number;
