@@ -21,6 +21,8 @@ export type PlayerExerciseState = {
   successes?: number;
   startedAt?: number;
   deadlineAt?: number;
+  completionMode?: string;
+  completionValue?: number;
 };
 
 function text(exercise: ExerciseDefinition) {
@@ -49,21 +51,26 @@ export function detectExerciseKind(exercise: ExerciseDefinition): string {
   return "CUSTOM";
 }
 
-function configuredTimeState(exercise: ExerciseDefinition) {
-  if (exercise.completionMode !== "TIME_LIMIT" || !exercise.completionValue || exercise.completionValue <= 0) return {};
-  const startedAt = Date.now();
-  return { startedAt, deadlineAt: startedAt + exercise.completionValue * 60_000 };
+function configuredState(exercise: ExerciseDefinition) {
+  const completionMode = exercise.completionMode ?? "ENGINE_DEFAULT";
+  const completionValue = exercise.completionValue ?? undefined;
+  const state: Pick<PlayerExerciseState, "completionMode" | "completionValue" | "startedAt" | "deadlineAt"> = { completionMode, completionValue };
+  if (completionMode === "TIME_LIMIT" && completionValue && completionValue > 0) {
+    state.startedAt = Date.now();
+    state.deadlineAt = state.startedAt + completionValue * 60_000;
+  }
+  return state;
 }
 
 export function createInitialExerciseState(exercise: ExerciseDefinition): PlayerExerciseState {
   const kind = detectExerciseKind(exercise);
-  const timeState = configuredTimeState(exercise);
-  if (kind === "BOB27") return { kind, visit: 1, completed: false, score: 27, targetIndex: 0, target: "D1", dartsThrown: 0, hits: 0, ...timeState };
-  if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0, ...timeState };
-  if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0, ...timeState };
-  if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0, ...timeState };
-  if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0, ...timeState };
-  return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0, ...timeState };
+  const config = configuredState(exercise);
+  if (kind === "BOB27") return { kind, visit: 1, completed: false, score: 27, targetIndex: 0, target: "D1", dartsThrown: 0, hits: 0, ...config };
+  if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0, ...config };
+  if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0, ...config };
+  if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0, ...config };
+  if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0, ...config };
+  return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0, ...config };
 }
 
 function number(value: unknown, fallback = 0) {
@@ -72,8 +79,8 @@ function number(value: unknown, fallback = 0) {
 }
 
 function withConfiguredCompletion(exercise: ExerciseDefinition, state: PlayerExerciseState, forceTimeout = false) {
-  const mode = exercise.completionMode ?? "ENGINE_DEFAULT";
-  const value = exercise.completionValue ?? 0;
+  const mode = state.completionMode ?? exercise.completionMode ?? "ENGINE_DEFAULT";
+  const value = state.completionValue ?? exercise.completionValue ?? 0;
   if (mode === "VISIT_LIMIT" && value > 0 && state.visit > value) return { ...state, completed: true };
   if (mode === "DART_LIMIT" && value > 0 && (state.dartsThrown ?? 0) >= value) return { ...state, completed: true };
   if (mode === "TIME_LIMIT" && value > 0 && (forceTimeout || (state.deadlineAt != null && Date.now() >= state.deadlineAt))) return { ...state, completed: true };
