@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const boardSessionId = Number(body.boardSessionId);
-    const value = body.value;
+    const value = body.value as Prisma.InputJsonValue;
     const calculatedScore = body.calculatedScore == null || body.calculatedScore === "" ? null : Number(body.calculatedScore);
 
     if (!Number.isInteger(boardSessionId) || value == null) {
@@ -45,7 +46,6 @@ export async function POST(request: Request) {
         trainingDay: {
           include: {
             trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } },
-            assignments: { where: { boardId: undefined }, orderBy: { position: "asc" } },
           },
         },
       },
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
           player: { connect: { id: currentPlayerId } },
           roundNumber: progress.roundNumber,
           valueJson: value,
-          calculatedScore: Number.isFinite(calculatedScore) ? calculatedScore : null,
+          calculatedScore: calculatedScore !== null && Number.isFinite(calculatedScore) ? calculatedScore : null,
         },
       });
 
