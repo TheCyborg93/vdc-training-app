@@ -5,7 +5,7 @@ const modules = [
   ["Live-Training", "Boards, Übungen und Fortschritt verfolgen", "/trainer/live"],
   ["Statistiken", "Entwicklung und Ergebnisse der Spieler", "/statistik"],
   ["Trainingspläne", "Pläne erstellen und verwalten", "/trainer/trainingsplaene"],
-  ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
+  ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer/heimtraining"],
   ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
   ["Boards", "Verfügbare Boards organisieren", "/trainer/boards"],
   ["Übungskatalog", "Übungen und Ergebnistypen pflegen", "/trainer/uebungen"]
