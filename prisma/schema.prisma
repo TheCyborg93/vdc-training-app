@@ -34,6 +34,13 @@ enum BoardSessionStatus {
   COMPLETED
 }
 
+enum HomeSessionStatus {
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
 enum ExerciseResultType {
   HITS_0_TO_3
   SCORE_0_TO_180
@@ -42,6 +49,40 @@ enum ExerciseResultType {
   TIME_BASED
   BOOLEAN
   CUSTOM
+}
+
+enum ExerciseEngine {
+  AUTO
+  BOB27
+  AROUND_CLOCK
+  AROUND_DOUBLES
+  AROUND_TREBLES
+  X01
+  CHECKOUT_LADDER
+  SCORING
+  SHANGHAI
+  JDC_CHALLENGE
+  DOUBLES_ROUNDS
+  BULL_ROUNDS
+  HIT_ROUNDS
+  TIME_BASED
+  CUSTOM
+}
+
+enum ExerciseCompletionMode {
+  ENGINE_DEFAULT
+  TARGET_REACHED
+  VISIT_LIMIT
+  DART_LIMIT
+  TIME_LIMIT
+  MANUAL
+}
+
+enum ResultAuditAction {
+  CREATED
+  UPDATED
+  UNDONE
+  DELETED
 }
 
 model User {
@@ -71,6 +112,8 @@ model Player {
   boardAssignments  BoardAssignment[]
   results           ExerciseResult[]
   homePlans         HomeTrainingPlan[]
+  homeSessions      HomeTrainingSession[]
+  homeResults       HomeExerciseResult[]
 }
 
 model Board {
@@ -96,33 +139,37 @@ model ExerciseCategory {
 }
 
 model Exercise {
-  id               Int                @id @default(autoincrement())
+  id               Int                       @id @default(autoincrement())
   name             String
   shortDescription String?
-  description      String             @db.Text
-  instructions     String?            @db.Text
+  description      String                    @db.Text
+  instructions     String?                   @db.Text
   materials        String?
-  trainerNotes     String?            @db.Text
+  trainerNotes     String?                   @db.Text
   defaultMinutes   Int
-  minPlayers       Int                @default(1)
+  minPlayers       Int                       @default(1)
   maxPlayers       Int?
-  difficulty       Int                @default(1)
-  intensity        Int                @default(5)
-  funFactor        Int                @default(5)
-  learningCurve    Int                @default(5)
+  difficulty       Int                       @default(1)
+  intensity        Int                       @default(5)
+  funFactor        Int                       @default(5)
+  learningCurve    Int                       @default(5)
   resultType       ExerciseResultType
+  engine           ExerciseEngine            @default(AUTO)
+  completionMode   ExerciseCompletionMode    @default(ENGINE_DEFAULT)
+  completionValue  Int?
   resultConfigJson Json?
   tagsJson         Json?
   variantsJson     Json?
-  favorite         Boolean            @default(false)
-  usageCount       Int                @default(0)
-  active           Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  favorite         Boolean                   @default(false)
+  usageCount       Int                       @default(0)
+  active           Boolean                   @default(true)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
 
-  categories ExerciseCategoryLink[]
-  planItems  TrainingPlanExercise[]
-  results    ExerciseResult[]
+  categories  ExerciseCategoryLink[]
+  planItems   TrainingPlanExercise[]
+  results     ExerciseResult[]
+  homeResults HomeExerciseResult[]
 }
 
 model ExerciseCategoryLink {
@@ -242,11 +289,15 @@ model ExerciseResult {
   roundNumber     Int
   valueJson       Json
   calculatedScore Float?
+  correctedAt     DateTime?
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   boardSession BoardSession @relation(fields: [boardSessionId], references: [id], onDelete: Cascade)
   exercise     Exercise     @relation(fields: [exerciseId], references: [id])
   player       Player       @relation(fields: [playerId], references: [id])
+  audits       ResultAudit[]
 }
 
 model HomeTrainingPlan {
@@ -259,5 +310,65 @@ model HomeTrainingPlan {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player   Player                @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  sessions HomeTrainingSession[]
+}
+
+model HomeTrainingSession {
+  id               Int               @id @default(autoincrement())
+  homeTrainingPlanId Int
+  playerId         Int
+  status           HomeSessionStatus @default(RUNNING)
+  exerciseIndex    Int               @default(0)
+  stateJson        Json
+  startedAt        DateTime          @default(now())
+  pausedAt         DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  plan    HomeTrainingPlan  @relation(fields: [homeTrainingPlanId], references: [id], onDelete: Cascade)
+  player  Player            @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  results HomeExerciseResult[]
+
+  @@index([playerId, status])
+}
+
+model HomeExerciseResult {
+  id                    Int      @id @default(autoincrement())
+  homeTrainingSessionId Int
+  exerciseId            Int
+  playerId              Int
+  exerciseIndex         Int
+  roundNumber           Int
+  valueJson             Json
+  calculatedScore       Float?
+  correctedAt           DateTime?
+  deletedAt             DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  session  HomeTrainingSession @relation(fields: [homeTrainingSessionId], references: [id], onDelete: Cascade)
+  exercise Exercise            @relation(fields: [exerciseId], references: [id])
+  player   Player              @relation(fields: [playerId], references: [id])
+  audits   ResultAudit[]
+
+  @@index([homeTrainingSessionId, exerciseIndex])
+}
+
+model ResultAudit {
+  id                   Int               @id @default(autoincrement())
+  exerciseResultId     Int?
+  homeExerciseResultId Int?
+  action               ResultAuditAction
+  beforeJson           Json?
+  afterJson            Json?
+  reason               String?
+  createdAt            DateTime          @default(now())
+
+  exerciseResult     ExerciseResult?     @relation(fields: [exerciseResultId], references: [id], onDelete: Cascade)
+  homeExerciseResult HomeExerciseResult? @relation(fields: [homeExerciseResultId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseResultId])
+  @@index([homeExerciseResultId])
 }
