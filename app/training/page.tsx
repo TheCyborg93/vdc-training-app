@@ -24,6 +24,16 @@ function readProgress(value: unknown): Progress | null {
   return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
 }
 
+function stateSummary(state?: ExerciseState) {
+  if (!state) return "Noch nicht gestartet";
+  if (state.completed) return "Übung abgeschlossen";
+  const parts = [];
+  if (state.target) parts.push(`Ziel ${state.target}`);
+  if (state.score !== undefined) parts.push(`Stand ${state.score}`);
+  parts.push(`Aufnahme ${state.visit ?? 1}`);
+  return parts.join(" · ");
+}
+
 export default function LiveTrainingPage() {
   const [training, setTraining] = useState<TrainingDay | null>(null);
   const [boardId, setBoardId] = useState<number | null>(null);
@@ -59,17 +69,17 @@ export default function LiveTrainingPage() {
   const currentPlayer = progress ? orderedPlayers[progress.playerIndex] : null;
   const currentPlanExercise = progress ? training?.trainingPlan.exercises[progress.exerciseIndex] : null;
   const currentExerciseState = currentPlayer && progress?.playerStates ? progress.playerStates[String(currentPlayer.id)] ?? null : null;
-  const progressPercent = progress && training ? Math.round(((progress.exerciseIndex + progress.playerIndex / Math.max(progress.order.length, 1)) / training.trainingPlan.exercises.length) * 100) : 0;
+  const progressPercent = progress && training ? Math.round((progress.exerciseIndex / Math.max(training.trainingPlan.exercises.length, 1)) * 100) : 0;
 
   async function startTraining() {
     if (!training || !boardId) return;
-    if (!window.confirm(`Training an ${boards.find((board) => board.id === boardId)?.name ?? "diesem Board"} starten?`)) return;
+    if (!window.confirm(`Training an ${boards.find((board) => board.id === boardId)?.name ?? "diesem Board"} starten? Die Reihenfolge wird zufällig ausgelost.`)) return;
     setStarting(true); setMessage("");
     try {
       const response = await fetch("/api/training/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trainingDayId: training.id, boardId }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Start fehlgeschlagen.");
-      setMessage("Training wurde gestartet.");
+      setMessage("Training gestartet. Die Spielerreihenfolge wurde zufällig festgelegt.");
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
     finally { setStarting(false); }
@@ -82,7 +92,12 @@ export default function LiveTrainingPage() {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boardSessionId: session.id, value }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
-      setMessage(data.completed ? "Training an diesem Board abgeschlossen." : data.exerciseCompleted ? "Übung abgeschlossen. Die nächste Übung startet." : data.playerFinished ? "Spieler fertig. Der nächste Spieler ist dran." : "Aufnahme gespeichert. Du bleibst in dieser Übung.");
+      if (data.completed) setMessage("Training an diesem Board abgeschlossen.");
+      else if (data.exerciseCompleted) setMessage("Alle Spieler sind fertig. Die nächste Übung startet mit neuer zufälliger Reihenfolge.");
+      else {
+        const nextPlayer = orderedPlayers.find((player) => player.id === data.nextPlayerId);
+        setMessage(`Aufnahme gespeichert. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.`);
+      }
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
     finally { setSaving(false); }
@@ -96,9 +111,13 @@ export default function LiveTrainingPage() {
       <section className="live-training-layout">
         <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{message && <p className="form-message">{message}</p>}</aside>
         <section>
-          <div className="section-heading"><div><span className="eyebrow">Board-Gruppe</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
-          <div className="live-player-list">{orderedPlayers.map((player, index) => <article className={`live-player-card ${currentPlayer?.id === player.id ? "is-current" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{currentPlayer?.id === player.id ? "Jetzt am Zug" : session?.status === "RUNNING" ? "Wartet" : "Eingeteilt"}</small></article>)}</div>
-          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && <section className="result-panel"><div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div><div className="eyebrow">Aktuelle Übung</div><h2>{currentPlanExercise.exercise.name}</h2><p>{currentPlanExercise.exercise.description}</p><div className="current-player"><small>Aktueller Spieler</small><strong>{currentPlayer.displayName}</strong></div><ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} /></section>}
+          <div className="section-heading"><div><span className="eyebrow">Zufällige Reihenfolge</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
+          <div className="live-player-list">{orderedPlayers.map((player, index) => {
+            const state = progress?.playerStates?.[String(player.id)];
+            const isCurrent = currentPlayer?.id === player.id;
+            return <article className={`live-player-card ${isCurrent ? "is-current" : ""} ${state?.completed ? "is-finished" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{isCurrent ? "Jetzt am Zug" : state?.completed ? "Fertig" : "Wartet"}</small><p>{stateSummary(state)}</p></article>;
+          })}</div>
+          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && <section className="result-panel"><div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div><div className="eyebrow">Jetzt am Zug</div><h2>{currentPlayer.displayName}</h2><div className="current-player"><small>Aktuelle Übung</small><strong>{currentPlanExercise.exercise.name}</strong><span>{stateSummary(currentExerciseState ?? undefined)}</span></div><p>{currentPlanExercise.exercise.description}</p><ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} /></section>}
           <div className="section-heading live-exercise-heading"><div><span className="eyebrow">Trainingsablauf</span><h2>{training.trainingPlan.exercises.length} Übungen</h2></div></div>
           <div className="plan-item-list">{training.trainingPlan.exercises.map((item, index) => <article className={`plan-item ${progress?.exerciseIndex === index ? "is-active-exercise" : ""}`} key={item.id}><span className="drag-handle">{index + 1}</span><div><strong>{item.exercise.name}</strong><p>{item.exercise.description}</p></div><span>{item.durationMin} Min.</span></article>)}</div>
         </section>
