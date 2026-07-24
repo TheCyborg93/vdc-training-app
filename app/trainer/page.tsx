@@ -3,6 +3,7 @@ import Link from "next/link";
 const modules = [
   ["Trainingstag veröffentlichen", "Plan, Boards und Spieler zusammenstellen", "/trainer/trainingstag"],
   ["Live-Training", "Boards, Übungen und Fortschritt verfolgen", "/trainer/live"],
+  ["Statistiken", "Entwicklung und Ergebnisse der Spieler", "/statistik"],
   ["Trainingspläne", "Pläne erstellen und verwalten", "/trainer/trainingsplaene"],
   ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
   ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
