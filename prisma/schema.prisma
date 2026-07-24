@@ -1,0 +1,252 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TRAINER
+}
+
+enum TrainingPlanStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TrainingDayStatus {
+  PLANNED
+  PUBLISHED
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum BoardSessionStatus {
+  NOT_STARTED
+  RUNNING
+  PAUSED
+  COMPLETED
+}
+
+enum ExerciseResultType {
+  HITS_0_TO_3
+  SCORE_0_TO_180
+  CHECKOUT
+  LEGS
+  TIME_BASED
+  BOOLEAN
+  CUSTOM
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(TRAINER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  plans TrainingPlan[]
+}
+
+model Player {
+  id          Int      @id @default(autoincrement())
+  firstName   String
+  lastName    String
+  displayName String
+  active      Boolean  @default(true)
+  skillLevel  Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trainingDayPlayers TrainingDayPlayer[]
+  boardAssignments  BoardAssignment[]
+  results           ExerciseResult[]
+  homePlans         HomeTrainingPlan[]
+}
+
+model Board {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  location  String?
+  active    Boolean  @default(true)
+  available Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  trainingDayBoards TrainingDayBoard[]
+  sessions          BoardSession[]
+}
+
+model ExerciseCategory {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  exercises ExerciseCategoryLink[]
+}
+
+model Exercise {
+  id               Int                @id @default(autoincrement())
+  name             String
+  description      String             @db.Text
+  instructions     String?            @db.Text
+  defaultMinutes   Int
+  minPlayers       Int                @default(1)
+  maxPlayers       Int?
+  difficulty       Int                @default(1)
+  resultType       ExerciseResultType
+  resultConfigJson Json?
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  categories ExerciseCategoryLink[]
+  planItems  TrainingPlanExercise[]
+  results    ExerciseResult[]
+}
+
+model ExerciseCategoryLink {
+  exerciseId Int
+  categoryId Int
+
+  exercise Exercise         @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  category ExerciseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([exerciseId, categoryId])
+}
+
+model TrainingPlan {
+  id          Int                @id @default(autoincrement())
+  title       String
+  goal        String
+  durationMin Int
+  status      TrainingPlanStatus @default(DRAFT)
+  createdById Int
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  createdBy    User                   @relation(fields: [createdById], references: [id])
+  exercises    TrainingPlanExercise[]
+  trainingDays TrainingDay[]
+}
+
+model TrainingPlanExercise {
+  id             Int @id @default(autoincrement())
+  trainingPlanId Int
+  exerciseId     Int
+  position       Int
+  durationMin    Int
+  settingsJson   Json?
+
+  trainingPlan TrainingPlan @relation(fields: [trainingPlanId], references: [id], onDelete: Cascade)
+  exercise     Exercise     @relation(fields: [exerciseId], references: [id])
+
+  @@unique([trainingPlanId, position])
+}
+
+model TrainingDay {
+  id             Int               @id @default(autoincrement())
+  trainingPlanId Int
+  trainingDate   DateTime
+  status         TrainingDayStatus @default(PLANNED)
+  publishedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  trainingPlan TrainingPlan       @relation(fields: [trainingPlanId], references: [id])
+  players      TrainingDayPlayer[]
+  boards       TrainingDayBoard[]
+  assignments  BoardAssignment[]
+  sessions     BoardSession[]
+}
+
+model TrainingDayPlayer {
+  trainingDayId Int
+  playerId      Int
+
+  trainingDay TrainingDay @relation(fields: [trainingDayId], references: [id], onDelete: Cascade)
+  player      Player      @relation(fields: [playerId], references: [id])
+
+  @@id([trainingDayId, playerId])
+}
+
+model TrainingDayBoard {
+  trainingDayId Int
+  boardId       Int
+
+  trainingDay TrainingDay @relation(fields: [trainingDayId], references: [id], onDelete: Cascade)
+  board       Board       @relation(fields: [boardId], references: [id])
+
+  @@id([trainingDayId, boardId])
+}
+
+model BoardAssignment {
+  id            Int @id @default(autoincrement())
+  trainingDayId Int
+  boardId       Int
+  playerId      Int
+  position      Int
+
+  trainingDay TrainingDay @relation(fields: [trainingDayId], references: [id], onDelete: Cascade)
+  board       Board       @relation(fields: [boardId], references: [id])
+  player      Player      @relation(fields: [playerId], references: [id])
+
+  @@unique([trainingDayId, playerId])
+  @@unique([trainingDayId, boardId, position])
+}
+
+model BoardSession {
+  id                Int                @id @default(autoincrement())
+  trainingDayId     Int
+  boardId           Int
+  status            BoardSessionStatus @default(NOT_STARTED)
+  currentExerciseId Int?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  randomOrderJson   Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  trainingDay TrainingDay      @relation(fields: [trainingDayId], references: [id], onDelete: Cascade)
+  board       Board            @relation(fields: [boardId], references: [id])
+  results     ExerciseResult[]
+
+  @@unique([trainingDayId, boardId])
+}
+
+model ExerciseResult {
+  id              Int      @id @default(autoincrement())
+  boardSessionId  Int
+  exerciseId      Int
+  playerId        Int
+  roundNumber     Int
+  valueJson       Json
+  calculatedScore Float?
+  createdAt       DateTime @default(now())
+
+  boardSession BoardSession @relation(fields: [boardSessionId], references: [id], onDelete: Cascade)
+  exercise     Exercise     @relation(fields: [exerciseId], references: [id])
+  player       Player       @relation(fields: [playerId], references: [id])
+}
+
+model HomeTrainingPlan {
+  id          Int      @id @default(autoincrement())
+  playerId    Int
+  title       String
+  goal        String
+  durationMin Int
+  planJson    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+}
