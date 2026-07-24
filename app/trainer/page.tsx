@@ -4,7 +4,7 @@ const modules = [
   ["Trainingstag erstellen", "Ziel, Dauer und Plan festlegen", "/trainer"],
   ["Trainingspläne", "Pläne verwalten und bearbeiten", "/trainer"],
   ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
-  ["Spieler", "Spieler hinzufügen und verwalten", "/trainer"],
+  ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
   ["Boards", "Verfügbare Boards organisieren", "/trainer"],
   ["Übungskatalog", "Übungen und Ergebnistypen pflegen", "/trainer"]
 ];
@@ -22,7 +22,7 @@ export default function TrainerPage() {
       </section>
 
       <section className="stats-row">
-        <article><small>Aktive Spieler</small><strong>0</strong><span>noch keine Daten</span></article>
+        <article><small>Aktive Spieler</small><strong>0</strong><span>Spielerverwaltung verfügbar</span></article>
         <article><small>Verfügbare Boards</small><strong>0</strong><span>noch keine Daten</span></article>
         <article><small>Übungen</small><strong>0</strong><span>Katalog vorbereiten</span></article>
         <article><small>Trainingspläne</small><strong>0</strong><span>ersten Plan erstellen</span></article>
