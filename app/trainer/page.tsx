@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 const modules = [
-  ["Trainingstag erstellen", "Ziel, Dauer und Plan festlegen", "/trainer/trainingsplaene"],
-  ["Trainingspläne", "Pläne verwalten und bearbeiten", "/trainer/trainingsplaene"],
+  ["Trainingstag veröffentlichen", "Plan, Boards und Spieler zusammenstellen", "/trainer/trainingstag"],
+  ["Trainingspläne", "Pläne erstellen und verwalten", "/trainer/trainingsplaene"],
   ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
   ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
   ["Boards", "Verfügbare Boards organisieren", "/trainer/boards"],
@@ -47,7 +47,7 @@ export default function TrainerPage() {
           <h2>Noch nicht geplant</h2>
           <p>Erstelle einen Trainingsplan und veröffentliche anschließend den Trainingstag.</p>
           <div className="empty-timeline"><span /><span /><span /></div>
-          <Link className="button full" href="/trainer/trainingsplaene">Training erstellen</Link>
+          <Link className="button full" href="/trainer/trainingstag">Trainingstag veröffentlichen</Link>
         </aside>
       </section>
     </main>
