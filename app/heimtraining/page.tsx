@@ -115,6 +115,24 @@ export default function HomeTrainingPage() {
     finally { setSaving(false); }
   }
 
+  async function undoLastVisit() {
+    if (!session || history.length === 0) return;
+    if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen? Punktestand und Ziel werden zurückgesetzt.")) return;
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", sessionId: session.id }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht rückgängig gemacht werden.");
+      setSession(data.session);
+      const stored = readState(data.state);
+      if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
+      setHistory((current) => current.filter((item) => item.id !== data.undoneResultId));
+      setRunning(true);
+      setMessage("Letzte Aufnahme wurde rückgängig gemacht. Punktestand und Ziel wurden wiederhergestellt.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Rückgängig fehlgeschlagen."); }
+    finally { setSaving(false); }
+  }
+
   async function saveVisit(value: Record<string, unknown>) {
     if (!session || !currentExercise || !exerciseState) return;
     setSaving(true); setMessage("");
@@ -145,6 +163,7 @@ export default function HomeTrainingPage() {
           {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
           <div className="actions">
             {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+            <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
             <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
           </div>
           {history.length > 0 && <div className="club-list" style={{ marginTop: 20 }}>{history.filter((item) => item.exerciseId === currentExercise.id).slice(-5).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small style={{ display: "block" }}>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
