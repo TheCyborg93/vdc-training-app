@@ -1,26 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import ExerciseResultInput from "@/components/training/ExerciseResultInput";
 import styles from "./training.module.css";
 
 type Player = { id: number; displayName: string };
 type Assignment = { boardId: number; position: number; board: { id: number; name: string }; player: Player };
 type Progress = { order: number[]; exerciseIndex: number; playerIndex: number; roundNumber: number };
 type Session = { id: number; boardId: number; status: string; randomOrderJson: unknown; board: { id: number; name: string } };
-type PlanExercise = {
-  id: number;
-  position: number;
-  durationMin: number;
-  exercise: { id: number; name: string; description: string; resultType: string };
-};
-type TrainingDay = {
-  id: number;
-  trainingDate: string;
-  status: string;
-  trainingPlan: { title: string; goal: string; durationMin: number; exercises: PlanExercise[] };
-  assignments: Assignment[];
-  sessions: Session[];
-};
+type PlanExercise = { id: number; position: number; durationMin: number; exercise: { id: number; name: string; description: string; resultType: string } };
+type TrainingDay = { id: number; trainingDate: string; status: string; trainingPlan: { title: string; goal: string; durationMin: number; exercises: PlanExercise[] }; assignments: Assignment[]; sessions: Session[] };
 
 function readProgress(value: unknown): Progress | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -38,16 +27,12 @@ export default function LiveTrainingPage() {
   const [boardId, setBoardId] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [numericValue, setNumericValue] = useState("");
   const [message, setMessage] = useState("");
 
   async function loadTraining() {
     const response = await fetch("/api/training/current", { cache: "no-store" });
     const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.error ?? "Training konnte nicht geladen werden.");
-      return;
-    }
+    if (!response.ok) { setMessage(data.error ?? "Training konnte nicht geladen werden."); return; }
     setTraining(data);
     if (data?.assignments?.length && boardId === null) setBoardId(data.assignments[0].boardId);
   }
@@ -65,66 +50,42 @@ export default function LiveTrainingPage() {
     return [...unique.values()];
   }, [training]);
 
-  const boardPlayers = useMemo(
-    () => training?.assignments.filter((item) => item.boardId === boardId).sort((a, b) => a.position - b.position) ?? [],
-    [training, boardId],
-  );
-
+  const boardPlayers = useMemo(() => training?.assignments.filter((item) => item.boardId === boardId).sort((a, b) => a.position - b.position) ?? [], [training, boardId]);
   const session = training?.sessions.find((item) => item.boardId === boardId);
   const progress = readProgress(session?.randomOrderJson);
-  const orderedPlayers = progress
-    ? progress.order.map((id) => boardPlayers.find((item) => item.player.id === id)?.player).filter((item): item is Player => Boolean(item))
-    : boardPlayers.map((item) => item.player);
+  const orderedPlayers = progress ? progress.order.map((id) => boardPlayers.find((item) => item.player.id === id)?.player).filter((item): item is Player => Boolean(item)) : boardPlayers.map((item) => item.player);
   const currentPlayer = progress ? orderedPlayers[progress.playerIndex] : null;
   const currentPlanExercise = progress ? training?.trainingPlan.exercises[progress.exerciseIndex] : null;
+  const progressPercent = progress && training ? Math.round(((progress.exerciseIndex + (progress.playerIndex + 1) / Math.max(progress.order.length, 1)) / training.trainingPlan.exercises.length) * 100) : 0;
 
   async function startTraining() {
     if (!training || !boardId) return;
     if (!window.confirm(`Training an ${boards.find((board) => board.id === boardId)?.name ?? "diesem Board"} starten?`)) return;
-    setStarting(true);
-    setMessage("");
+    setStarting(true); setMessage("");
     try {
-      const response = await fetch("/api/training/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trainingDayId: training.id, boardId }),
-      });
+      const response = await fetch("/api/training/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trainingDayId: training.id, boardId }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Start fehlgeschlagen.");
       setMessage("Training wurde gestartet.");
       await loadTraining();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen.");
-    } finally {
-      setStarting(false);
-    }
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
+    finally { setStarting(false); }
   }
 
-  async function saveResult(value: unknown, calculatedScore?: number) {
+  async function saveResult(value: Record<string, unknown>) {
     if (!session) return;
-    setSaving(true);
-    setMessage("");
+    setSaving(true); setMessage("");
     try {
-      const response = await fetch("/api/training/result", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardSessionId: session.id, value, calculatedScore }),
-      });
+      const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boardSessionId: session.id, value }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Ergebnis konnte nicht gespeichert werden.");
-      setNumericValue("");
       setMessage(data.completed ? "Training an diesem Board abgeschlossen." : "Ergebnis gespeichert. Nächster Spieler ist dran.");
       await loadTraining();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Ergebnis konnte nicht gespeichert werden.");
-    } finally {
-      setSaving(false);
-    }
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Ergebnis konnte nicht gespeichert werden."); }
+    finally { setSaving(false); }
   }
 
-  if (!training) {
-    return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
-  }
+  if (!training) return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
 
   return (
     <main className={`${styles.root} dashboard-page`}>
@@ -135,11 +96,7 @@ export default function LiveTrainingPage() {
 
       <section className="live-training-layout">
         <aside className="card admin-form">
-          <label>Board bestätigen
-            <select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>
-              {boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
-            </select>
-          </label>
+          <label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label>
           <div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div>
           <button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>
           {message && <p className="form-message">{message}</p>}
@@ -147,31 +104,19 @@ export default function LiveTrainingPage() {
 
         <section>
           <div className="section-heading"><div><span className="eyebrow">Board-Gruppe</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
-          <div className="live-player-list">
-            {orderedPlayers.map((player, index) => <article className={`live-player-card ${currentPlayer?.id === player.id ? "is-current" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{currentPlayer?.id === player.id ? "Jetzt am Zug" : session?.status === "RUNNING" ? "Wartet" : "Eingeteilt"}</small></article>)}
-          </div>
+          <div className="live-player-list">{orderedPlayers.map((player, index) => <article className={`live-player-card ${currentPlayer?.id === player.id ? "is-current" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{currentPlayer?.id === player.id ? "Jetzt am Zug" : session?.status === "RUNNING" ? "Wartet" : "Eingeteilt"}</small></article>)}</div>
 
-          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && (
+          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && (
             <section className="result-panel">
-              <div className="eyebrow">Übung {progress!.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</div>
-              <h2>{currentPlanExercise.exercise.name}</h2>
-              <p>{currentPlanExercise.exercise.description}</p>
+              <div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
+              <div className="eyebrow">Aktuelle Übung</div><h2>{currentPlanExercise.exercise.name}</h2><p>{currentPlanExercise.exercise.description}</p>
               <div className="current-player"><small>Aktueller Spieler</small><strong>{currentPlayer.displayName}</strong></div>
-
-              {currentPlanExercise.exercise.resultType === "HITS_0_TO_3" ? (
-                <div className="result-button-grid">{[0, 1, 2, 3].map((hits) => <button disabled={saving} key={hits} onClick={() => void saveResult({ hits }, hits)}>{hits} Treffer</button>)}</div>
-              ) : currentPlanExercise.exercise.resultType === "BOOLEAN" ? (
-                <div className="result-button-grid"><button disabled={saving} onClick={() => void saveResult({ success: true }, 1)}>Ja</button><button disabled={saving} onClick={() => void saveResult({ success: false }, 0)}>Nein</button></div>
-              ) : (
-                <div className="numeric-result"><input type="number" min="0" max={currentPlanExercise.exercise.resultType === "SCORE_0_TO_180" ? 180 : undefined} value={numericValue} onChange={(event) => setNumericValue(event.target.value)} placeholder="Ergebnis eingeben" /><button className="button" disabled={saving || numericValue === ""} onClick={() => void saveResult({ value: Number(numericValue) }, Number(numericValue))}>{saving ? "Speichert …" : "Ergebnis bestätigen"}</button></div>
-              )}
+              <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} disabled={saving} onSubmit={saveResult} />
             </section>
           )}
 
           <div className="section-heading live-exercise-heading"><div><span className="eyebrow">Trainingsablauf</span><h2>{training.trainingPlan.exercises.length} Übungen</h2></div></div>
-          <div className="plan-item-list">
-            {training.trainingPlan.exercises.map((item, index) => <article className={`plan-item ${progress?.exerciseIndex === index ? "is-active-exercise" : ""}`} key={item.id}><span className="drag-handle">{index + 1}</span><div><strong>{item.exercise.name}</strong><p>{item.exercise.description}</p></div><span>{item.durationMin} Min.</span></article>)}
-          </div>
+          <div className="plan-item-list">{training.trainingPlan.exercises.map((item, index) => <article className={`plan-item ${progress?.exerciseIndex === index ? "is-active-exercise" : ""}`} key={item.id}><span className="drag-handle">{index + 1}</span><div><strong>{item.exercise.name}</strong><p>{item.exercise.description}</p></div><span>{item.durationMin} Min.</span></article>)}</div>
         </section>
       </section>
     </main>
