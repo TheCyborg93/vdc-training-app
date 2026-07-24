@@ -34,6 +34,14 @@ function readProgress(value: unknown): ProgressState | null {
   return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
 }
 
+function nextActivePlayerIndex(order: number[], states: Record<string, PlayerExerciseState>, currentIndex: number): number {
+  for (let offset = 1; offset <= order.length; offset += 1) {
+    const index = (currentIndex + offset) % order.length;
+    if (!states[String(order[index])]?.completed) return index;
+  }
+  return currentIndex;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -58,33 +66,32 @@ export async function POST(request: Request) {
     if (!currentPlanExercise || !currentPlayerId) return NextResponse.json({ error: "Aktuelle Übung oder Spieler konnte nicht bestimmt werden." }, { status: 409 });
 
     const currentState = progress.playerStates[String(currentPlayerId)] ?? createInitialExerciseState(currentPlanExercise.exercise);
-    const applied = applyVisit(currentPlanExercise.exercise, currentState, body.value as Record<string, unknown>);
-    const nextStates = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
+    if (currentState.completed) return NextResponse.json({ error: "Dieser Spieler hat die Übung bereits abgeschlossen." }, { status: 409 });
 
-    let nextPlayerIndex = progress.playerIndex;
-    let nextExerciseIndex = progress.exerciseIndex;
-    let nextOrder = progress.order;
+    const applied = applyVisit(currentPlanExercise.exercise, currentState, body.value as Record<string, unknown>);
+    const updatedStates = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
+    const allPlayersFinished = progress.order.every((playerId) => Boolean(updatedStates[String(playerId)]?.completed));
+
     let completed = false;
     let exerciseCompleted = false;
+    let nextExerciseIndex = progress.exerciseIndex;
+    let nextOrder = progress.order;
+    let nextPlayerIndex = progress.playerIndex;
+    let finalStates = updatedStates;
 
-    if (applied.playerFinished) {
-      nextPlayerIndex += 1;
-      if (nextPlayerIndex >= progress.order.length) {
-        exerciseCompleted = true;
+    if (allPlayersFinished) {
+      exerciseCompleted = true;
+      nextExerciseIndex += 1;
+      if (nextExerciseIndex >= planExercises.length) {
+        completed = true;
+      } else {
+        nextOrder = shuffle(assignments.map((item) => item.playerId));
+        const upcomingExercise = planExercises[nextExerciseIndex].exercise;
+        finalStates = Object.fromEntries(nextOrder.map((playerId) => [String(playerId), createInitialExerciseState(upcomingExercise)]));
         nextPlayerIndex = 0;
-        nextExerciseIndex += 1;
-        if (nextExerciseIndex >= planExercises.length) {
-          completed = true;
-        } else {
-          nextOrder = shuffle(assignments.map((item) => item.playerId));
-        }
       }
-    }
-
-    let finalStates = nextStates;
-    if (exerciseCompleted && !completed) {
-      const upcoming = planExercises[nextExerciseIndex].exercise;
-      finalStates = Object.fromEntries(nextOrder.map((playerId) => [String(playerId), createInitialExerciseState(upcoming)]));
+    } else {
+      nextPlayerIndex = nextActivePlayerIndex(progress.order, updatedStates, progress.playerIndex);
     }
 
     const nextProgress: ProgressState = {
@@ -95,6 +102,7 @@ export async function POST(request: Request) {
       playerStates: finalStates,
     };
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
+    const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
 
     await prisma.$transaction(async (tx) => {
       await tx.exerciseResult.create({
@@ -119,7 +127,14 @@ export async function POST(request: Request) {
       }
     });
 
-    return NextResponse.json({ completed, exerciseCompleted, playerFinished: applied.playerFinished, nextProgress, state: applied.nextState });
+    return NextResponse.json({
+      completed,
+      exerciseCompleted,
+      playerFinished: applied.playerFinished,
+      nextPlayerId,
+      nextProgress,
+      state: applied.nextState,
+    });
   } catch (error) {
     console.error("Training result POST failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Die Aufnahme konnte nicht gespeichert werden." }, { status: 500 });
