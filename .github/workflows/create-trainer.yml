@@ -1,0 +1,32 @@
+name: Create Trainer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/ensure-trainer.mjs"
+      - ".github/workflows/create-trainer.yml"
+
+jobs:
+  create-trainer:
+    name: Create or update Supabase trainer
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      TRAINER_INITIAL_PASSWORD: ${{ secrets.TRAINER_INITIAL_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ensure trainer account exists
+        run: node scripts/ensure-trainer.mjs
