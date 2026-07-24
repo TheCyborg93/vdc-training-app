@@ -20,17 +20,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Trainingstag und Board sind erforderlich." }, { status: 400 });
     }
 
-    const assignments = await prisma.boardAssignment.findMany({
-      where: { trainingDayId, boardId },
-      orderBy: { position: "asc" },
-      include: { player: true },
-    });
+    const [assignments, trainingDay] = await Promise.all([
+      prisma.boardAssignment.findMany({
+        where: { trainingDayId, boardId },
+        orderBy: { position: "asc" },
+        include: { player: true },
+      }),
+      prisma.trainingDay.findUnique({
+        where: { id: trainingDayId },
+        include: { trainingPlan: { include: { exercises: { orderBy: { position: "asc" } } } } },
+      }),
+    ]);
 
     if (assignments.length === 0) {
       return NextResponse.json({ error: "Für dieses Board wurden keine Spieler eingeteilt." }, { status: 404 });
     }
+    const firstExercise = trainingDay?.trainingPlan.exercises[0];
+    if (!firstExercise) {
+      return NextResponse.json({ error: "Der Trainingsplan enthält keine Übungen." }, { status: 400 });
+    }
 
-    const randomOrder = shuffle(assignments.map((assignment) => assignment.playerId));
+    const order = shuffle(assignments.map((assignment) => assignment.playerId));
+    const progress = { order, exerciseIndex: 0, playerIndex: 0, roundNumber: 1 };
 
     const session = await prisma.$transaction(async (tx) => {
       const updated = await tx.boardSession.update({
@@ -38,20 +49,17 @@ export async function POST(request: Request) {
         data: {
           status: "RUNNING",
           startedAt: new Date(),
-          randomOrderJson: randomOrder,
+          currentExerciseId: firstExercise.exerciseId,
+          randomOrderJson: progress,
         },
         include: { board: true },
       });
 
-      await tx.trainingDay.update({
-        where: { id: trainingDayId },
-        data: { status: "RUNNING" },
-      });
-
+      await tx.trainingDay.update({ where: { id: trainingDayId }, data: { status: "RUNNING" } });
       return updated;
     });
 
-    return NextResponse.json({ session, randomOrder, players: assignments.map((item) => item.player) });
+    return NextResponse.json({ session, progress, players: assignments.map((item) => item.player) });
   } catch (error) {
     console.error("Training start POST failed", error);
     return NextResponse.json({ error: "Das Training konnte nicht gestartet werden." }, { status: 500 });
