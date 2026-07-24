@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import "./training-plans.module.css";
+import styles from "./training-plans.module.css";
 
 type Exercise = {
   id: number;
@@ -113,7 +113,7 @@ export default function TrainingPlansPage() {
   }
 
   return (
-    <main className="dashboard-page">
+    <main className={`${styles.root} dashboard-page`}>
       <section className="dashboard-heading">
         <div><div className="eyebrow">Trainerbereich</div><h1>Trainingspläne</h1><p>Ziel und Dauer wählen, Plan erzeugen und anschließend frei anpassen.</p></div>
       </section>
