@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createInitialExerciseState } from "@/lib/exercise-session-engine";
 
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -15,46 +16,27 @@ export async function POST(request: Request) {
     const body = await request.json();
     const trainingDayId = Number(body.trainingDayId);
     const boardId = Number(body.boardId);
-
-    if (!Number.isInteger(trainingDayId) || !Number.isInteger(boardId)) {
-      return NextResponse.json({ error: "Trainingstag und Board sind erforderlich." }, { status: 400 });
-    }
+    if (!Number.isInteger(trainingDayId) || !Number.isInteger(boardId)) return NextResponse.json({ error: "Trainingstag und Board sind erforderlich." }, { status: 400 });
 
     const [assignments, trainingDay] = await Promise.all([
-      prisma.boardAssignment.findMany({
-        where: { trainingDayId, boardId },
-        orderBy: { position: "asc" },
-        include: { player: true },
-      }),
-      prisma.trainingDay.findUnique({
-        where: { id: trainingDayId },
-        include: { trainingPlan: { include: { exercises: { orderBy: { position: "asc" } } } } },
-      }),
+      prisma.boardAssignment.findMany({ where: { trainingDayId, boardId }, orderBy: { position: "asc" }, include: { player: true } }),
+      prisma.trainingDay.findUnique({ where: { id: trainingDayId }, include: { trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } } } }),
     ]);
-
-    if (assignments.length === 0) {
-      return NextResponse.json({ error: "Für dieses Board wurden keine Spieler eingeteilt." }, { status: 404 });
-    }
+    if (!assignments.length) return NextResponse.json({ error: "Für dieses Board wurden keine Spieler eingeteilt." }, { status: 404 });
     const firstExercise = trainingDay?.trainingPlan.exercises[0];
-    if (!firstExercise) {
-      return NextResponse.json({ error: "Der Trainingsplan enthält keine Übungen." }, { status: 400 });
-    }
+    if (!firstExercise) return NextResponse.json({ error: "Der Trainingsplan enthält keine Übungen." }, { status: 400 });
 
     const order = shuffle(assignments.map((assignment) => assignment.playerId));
-    const progress = { order, exerciseIndex: 0, playerIndex: 0, roundNumber: 1 };
+    const initialState = createInitialExerciseState(firstExercise.exercise);
+    const playerStates = Object.fromEntries(order.map((playerId) => [String(playerId), initialState]));
+    const progress = { order, exerciseIndex: 0, playerIndex: 0, roundNumber: 1, playerStates };
 
     const session = await prisma.$transaction(async (tx) => {
       const updated = await tx.boardSession.update({
         where: { trainingDayId_boardId: { trainingDayId, boardId } },
-        data: {
-          status: "RUNNING",
-          startedAt: new Date(),
-          currentExerciseId: firstExercise.exerciseId,
-          randomOrderJson: progress,
-        },
+        data: { status: "RUNNING", startedAt: new Date(), currentExerciseId: firstExercise.exerciseId, randomOrderJson: progress },
         include: { board: true },
       });
-
       await tx.trainingDay.update({ where: { id: trainingDayId }, data: { status: "RUNNING" } });
       return updated;
     });
