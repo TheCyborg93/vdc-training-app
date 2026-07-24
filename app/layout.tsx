@@ -3,6 +3,7 @@ import AppShell from "@/components/app-shell";
 import "./globals.css";
 import "./steel-ui.css";
 import "./club-ui.css";
+import "./login-nav.css";
 
 export const metadata: Metadata = {
   title: "VDC Training",
