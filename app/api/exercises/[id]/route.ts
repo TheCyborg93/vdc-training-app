@@ -1,4 +1,4 @@
-import { ExerciseResultType } from "@prisma/client";
+import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -12,12 +12,24 @@ function clamp(value: unknown, min: number, max: number, fallback: number) {
   return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
 }
 
+function completionValue(value: unknown) {
+  if (value === "" || value == null) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id: rawId } = await context.params;
     const id = Number(rawId);
     const body = await request.json();
     const categoryNames = parseStringArray(body.categories);
+    const mode = body.completionMode === undefined ? undefined : String(body.completionMode) as ExerciseCompletionMode;
+    const limit = body.completionValue === undefined ? undefined : completionValue(body.completionValue);
+
+    if (mode && ["VISIT_LIMIT", "DART_LIMIT", "TIME_LIMIT"].includes(mode) && limit == null) {
+      return NextResponse.json({ error: "Für diese Abschlussbedingung ist ein Wert größer als 0 erforderlich." }, { status: 400 });
+    }
 
     const exercise = await prisma.$transaction(async (tx) => {
       const updated = await tx.exercise.update({
@@ -37,6 +49,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
           ...(body.funFactor !== undefined && { funFactor: clamp(body.funFactor, 1, 10, 5) }),
           ...(body.learningCurve !== undefined && { learningCurve: clamp(body.learningCurve, 1, 10, 5) }),
           ...(body.resultType !== undefined && { resultType: String(body.resultType) as ExerciseResultType }),
+          ...(body.engine !== undefined && { engine: String(body.engine) as ExerciseEngine }),
+          ...(mode !== undefined && { completionMode: mode }),
+          ...(body.completionValue !== undefined && { completionValue: limit ?? null }),
           ...(body.tags !== undefined && { tagsJson: parseStringArray(body.tags) }),
           ...(body.variants !== undefined && { variantsJson: parseStringArray(body.variants) }),
           ...(body.favorite !== undefined && { favorite: Boolean(body.favorite) }),
