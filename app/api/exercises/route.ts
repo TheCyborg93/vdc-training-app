@@ -1,4 +1,4 @@
-import { ExerciseResultType } from "@prisma/client";
+import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -10,6 +10,12 @@ function parseStringArray(value: unknown): string[] {
 function clamp(value: unknown, min: number, max: number, fallback: number) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+}
+
+function completionValue(value: unknown) {
+  if (value === "" || value == null) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export async function GET() {
@@ -36,9 +42,14 @@ export async function POST(request: Request) {
     const description = String(body.description ?? "").trim();
     const defaultMinutes = Number(body.defaultMinutes);
     const categoryNames = parseStringArray(body.categories);
+    const mode = String(body.completionMode ?? "ENGINE_DEFAULT") as ExerciseCompletionMode;
+    const limit = completionValue(body.completionValue);
 
     if (!name || !description || !Number.isInteger(defaultMinutes) || defaultMinutes < 1) {
       return NextResponse.json({ error: "Name, Beschreibung und gültige Dauer sind erforderlich." }, { status: 400 });
+    }
+    if (["VISIT_LIMIT", "DART_LIMIT", "TIME_LIMIT"].includes(mode) && limit == null) {
+      return NextResponse.json({ error: "Für diese Abschlussbedingung ist ein Wert größer als 0 erforderlich." }, { status: 400 });
     }
 
     const duplicate = await prisma.exercise.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
@@ -61,6 +72,9 @@ export async function POST(request: Request) {
           funFactor: clamp(body.funFactor, 1, 10, 5),
           learningCurve: clamp(body.learningCurve, 1, 10, 5),
           resultType: String(body.resultType ?? "CUSTOM") as ExerciseResultType,
+          engine: String(body.engine ?? "AUTO") as ExerciseEngine,
+          completionMode: mode,
+          completionValue: limit,
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
