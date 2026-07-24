@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 const modules = [
-  ["Trainingstag erstellen", "Ziel, Dauer und Plan festlegen", "/trainer"],
-  ["Trainingspläne", "Pläne verwalten und bearbeiten", "/trainer"],
+  ["Trainingstag erstellen", "Ziel, Dauer und Plan festlegen", "/trainer/trainingsplaene"],
+  ["Trainingspläne", "Pläne verwalten und bearbeiten", "/trainer/trainingsplaene"],
   ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
   ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
   ["Boards", "Verfügbare Boards organisieren", "/trainer/boards"],
@@ -25,7 +25,7 @@ export default function TrainerPage() {
         <article><small>Aktive Spieler</small><strong>0</strong><span>Spielerverwaltung verfügbar</span></article>
         <article><small>Verfügbare Boards</small><strong>0</strong><span>Boardverwaltung verfügbar</span></article>
         <article><small>Übungen</small><strong>0</strong><span>Übungskatalog verfügbar</span></article>
-        <article><small>Trainingspläne</small><strong>0</strong><span>ersten Plan erstellen</span></article>
+        <article><small>Trainingspläne</small><strong>0</strong><span>Generator verfügbar</span></article>
       </section>
 
       <section className="dashboard-layout">
@@ -47,7 +47,7 @@ export default function TrainerPage() {
           <h2>Noch nicht geplant</h2>
           <p>Erstelle einen Trainingsplan und veröffentliche anschließend den Trainingstag.</p>
           <div className="empty-timeline"><span /><span /><span /></div>
-          <button className="button full" type="button">Training erstellen</button>
+          <Link className="button full" href="/trainer/trainingsplaene">Training erstellen</Link>
         </aside>
       </section>
     </main>
