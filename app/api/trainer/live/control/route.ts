@@ -55,7 +55,6 @@ export async function POST(request: Request) {
         trainingDay: {
           include: {
             trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } },
-            assignments: { where: { boardId: undefined }, orderBy: { position: "asc" } },
           },
         },
       },
