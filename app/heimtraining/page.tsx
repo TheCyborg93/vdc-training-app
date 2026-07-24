@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExerciseResultInput from "@/components/training/ExerciseResultInput";
+import ExerciseSummaryCard from "@/components/training/ExerciseSummaryCard";
 import type { PlayerExerciseState } from "@/lib/exercise-session-engine";
 
 type Player = { id: number; displayName: string };
@@ -11,6 +12,7 @@ type Plan = { id: number; playerId: number; title: string; goal: string; duratio
 type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState };
 type SavedResult = { id: number; exerciseId: number; roundNumber: number; calculatedScore: number | null; exercise?: { name: string } };
 type Session = { id: number; homeTrainingPlanId: number; playerId: number; status: string; exerciseIndex: number; stateJson: unknown; plan?: Plan; results?: SavedResult[] };
+type Summary = { title: string; kind: string; highlight: string; metrics: { label: string; value: string; detail?: string }[] };
 
 const goals = ["Scoring", "Doppel", "Checkout", "Stellen", "Mental", "Konstanz", "Wurftechnik", "Matchtraining"];
 
@@ -38,6 +40,7 @@ export default function HomeTrainingPage() {
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [exerciseState, setExerciseState] = useState<PlayerExerciseState | null>(null);
   const [history, setHistory] = useState<SavedResult[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -86,7 +89,7 @@ export default function HomeTrainingPage() {
 
   async function startPlan(plan: Plan) {
     if (!playerId) return;
-    setSaving(true); setMessage("");
+    setSaving(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", planId: plan.id, playerId }) });
       const data = await response.json();
@@ -118,7 +121,7 @@ export default function HomeTrainingPage() {
   async function undoLastVisit() {
     if (!session || history.length === 0) return;
     if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen? Punktestand und Ziel werden zurückgesetzt.")) return;
-    setSaving(true); setMessage("");
+    setSaving(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", sessionId: session.id }) });
       const data = await response.json();
@@ -141,10 +144,11 @@ export default function HomeTrainingPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
       setSession(data.session); setHistory((current) => [...current, data.result]);
+      if (data.summary) setSummary(data.summary);
       const stored = readState(data.state);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       if (data.completed) { setRunning(false); setMessage("Heimtraining vollständig abgeschlossen. Alle Ergebnisse wurden gespeichert."); }
-      else if (data.exerciseCompleted) setMessage("Übung abgeschlossen. Die nächste Übung startet automatisch.");
+      else if (data.exerciseCompleted) setMessage("Übung abgeschlossen. Die Auswertung ist bereit.");
       else setMessage(`Aufnahme gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
     finally { setSaving(false); }
@@ -153,14 +157,15 @@ export default function HomeTrainingPage() {
   return (
     <main className="dashboard-page">
       <section className="dashboard-heading"><div><div className="eyebrow">Spielerbereich</div><h1>Heimtraining</h1><p>Jede Aufnahme und dein kompletter Fortschritt werden dauerhaft in Supabase gespeichert.</p></div></section>
-      <section className="card admin-form" style={{ marginBottom: 24 }}><label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label></section>
+      <section className="card admin-form" style={{ marginBottom: 24 }}><label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setSummary(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label></section>
+      {summary && <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} />}
 
       {activePlan && session && currentExercise && exerciseState ? (
         <section className="result-panel">
           <div className="exercise-progress"><div><span>Übung {exerciseIndex + 1} von {planItems.length}</span><strong>{Math.round((exerciseIndex / Math.max(planItems.length, 1)) * 100)}%</strong></div><div className="progress-track"><span style={{ width: `${Math.round((exerciseIndex / Math.max(planItems.length, 1)) * 100)}%` }} /></div></div>
           <div className="eyebrow">{session.status === "PAUSED" ? "Training pausiert" : "Aktuelle Übung"}</div><h2>{currentExercise.name}</h2><p>{currentExercise.description}</p>
           <div className="current-player"><small>Aufnahme</small><strong>{exerciseState.visit}</strong><span>{exerciseState.target ? `Ziel: ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand: ${exerciseState.score}` : ""}</span></div>
-          {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
+          {running && !summary && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
           <div className="actions">
             {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
             <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
