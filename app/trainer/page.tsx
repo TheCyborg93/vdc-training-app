@@ -2,6 +2,7 @@ import Link from "next/link";
 
 const modules = [
   ["Trainingstag veröffentlichen", "Plan, Boards und Spieler zusammenstellen", "/trainer/trainingstag"],
+  ["Live-Training", "Boards, Übungen und Fortschritt verfolgen", "/trainer/live"],
   ["Trainingspläne", "Pläne erstellen und verwalten", "/trainer/trainingsplaene"],
   ["Heimtraining", "Individuelle Pläne für Spieler", "/trainer"],
   ["Spieler", "Spieler hinzufügen und verwalten", "/trainer/spieler"],
@@ -18,7 +19,7 @@ export default function TrainerPage() {
           <h1>Guten Morgen, Trainer.</h1>
           <p>Alles für den nächsten Trainingstag auf einen Blick.</p>
         </div>
-        <Link className="button" href="/trainingstag">Trainingstag öffnen</Link>
+        <Link className="button" href="/training">Trainingstag öffnen</Link>
       </section>
 
       <section className="stats-row">
@@ -34,7 +35,7 @@ export default function TrainerPage() {
           <div className="module-grid">
             {modules.map(([title, text, href], index) => (
               <Link className="module-card" href={href} key={title}>
-                <span className="module-number">0{index + 1}</span>
+                <span className="module-number">{String(index + 1).padStart(2, "0")}</span>
                 <div><strong>{title}</strong><p>{text}</p></div>
                 <b>→</b>
               </Link>
