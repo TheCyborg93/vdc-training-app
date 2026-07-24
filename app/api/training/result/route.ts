@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
+import { createExerciseSummary } from "@/lib/exercise-summary";
 
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -172,6 +173,20 @@ export async function POST(request: Request) {
       }
     });
 
+    let summary = null;
+    if (applied.playerFinished) {
+      const playerResults = await prisma.exerciseResult.findMany({
+        where: { boardSessionId: session.id, exerciseId: currentPlanExercise.exerciseId, playerId: currentPlayerId, deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { roundNumber: true, calculatedScore: true, valueJson: true },
+      });
+      const player = await prisma.player.findUnique({ where: { id: currentPlayerId }, select: { displayName: true } });
+      summary = {
+        playerName: player?.displayName ?? "Spieler",
+        ...createExerciseSummary(currentPlanExercise.exercise.name, applied.nextState.kind, playerResults, applied.nextState),
+      };
+    }
+
     return NextResponse.json({
       completed,
       exerciseCompleted,
@@ -179,6 +194,7 @@ export async function POST(request: Request) {
       nextPlayerId,
       nextProgress,
       state: applied.nextState,
+      summary,
     });
   } catch (error) {
     console.error("Training result POST failed", error);
