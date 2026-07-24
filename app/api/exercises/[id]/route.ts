@@ -1,27 +1,52 @@
+import { ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function idFrom(params: Promise<{ id: string }>) {
-  return params.then((value) => Number(value.id));
+function parseCategories(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const id = await idFrom(context.params);
+    const { id: rawId } = await context.params;
+    const id = Number(rawId);
     const body = await request.json();
-    const data: Record<string, unknown> = {};
+    const categoryNames = parseCategories(body.categories);
 
-    if (body.name !== undefined) data.name = String(body.name).trim();
-    if (body.description !== undefined) data.description = String(body.description).trim();
-    if (body.instructions !== undefined) data.instructions = String(body.instructions).trim() || null;
-    if (body.defaultMinutes !== undefined) data.defaultMinutes = Number(body.defaultMinutes);
-    if (body.minPlayers !== undefined) data.minPlayers = Number(body.minPlayers);
-    if (body.maxPlayers !== undefined) data.maxPlayers = body.maxPlayers === "" ? null : Number(body.maxPlayers);
-    if (body.difficulty !== undefined) data.difficulty = Number(body.difficulty);
-    if (body.resultType !== undefined) data.resultType = String(body.resultType);
-    if (body.active !== undefined) data.active = Boolean(body.active);
+    const exercise = await prisma.$transaction(async (tx) => {
+      const updated = await tx.exercise.update({
+        where: { id },
+        data: {
+          ...(body.name !== undefined && { name: String(body.name).trim() }),
+          ...(body.description !== undefined && { description: String(body.description).trim() }),
+          ...(body.instructions !== undefined && { instructions: String(body.instructions).trim() || null }),
+          ...(body.defaultMinutes !== undefined && { defaultMinutes: Number(body.defaultMinutes) }),
+          ...(body.minPlayers !== undefined && { minPlayers: Number(body.minPlayers) }),
+          ...(body.maxPlayers !== undefined && { maxPlayers: body.maxPlayers === "" ? null : Number(body.maxPlayers) }),
+          ...(body.difficulty !== undefined && { difficulty: Number(body.difficulty) }),
+          ...(body.resultType !== undefined && { resultType: String(body.resultType) as ExerciseResultType }),
+          ...(body.active !== undefined && { active: Boolean(body.active) })
+        }
+      });
 
-    const exercise = await prisma.exercise.update({ where: { id }, data });
+      if (body.categories !== undefined) {
+        await tx.exerciseCategoryLink.deleteMany({ where: { exerciseId: id } });
+        for (const categoryName of categoryNames) {
+          const category = await tx.exerciseCategory.upsert({
+            where: { name: categoryName },
+            update: {},
+            create: { name: categoryName }
+          });
+          await tx.exerciseCategoryLink.create({
+            data: { exerciseId: id, categoryId: category.id }
+          });
+        }
+      }
+
+      return updated;
+    });
+
     return NextResponse.json(exercise);
   } catch (error) {
     console.error("Exercise PATCH failed", error);
@@ -31,12 +56,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const id = await idFrom(context.params);
+    const { id: rawId } = await context.params;
+    const id = Number(rawId);
     const used = await prisma.trainingPlanExercise.count({ where: { exerciseId: id } });
+
     if (used > 0) {
       await prisma.exercise.update({ where: { id }, data: { active: false } });
       return NextResponse.json({ deactivated: true });
     }
+
     await prisma.exercise.delete({ where: { id } });
     return NextResponse.json({ deleted: true });
   } catch (error) {
