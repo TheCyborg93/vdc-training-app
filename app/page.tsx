@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
         <aside className="club-panel">
           <div className="club-section-title"><div><small>Dein Fortschritt</small><h2>Trainingsaktivität</h2></div></div>
-          <div className="club-progress-ring" style={{ "--progress": `${Math.min(100, trainingDays * 10)}%` } as React.CSSProperties}><strong>{Math.min(100, trainingDays * 10)}%</strong></div>
+          <div className="club-progress-ring" style={{ "--progress": `${Math.min(100, trainingDays * 10)}%` } as CSSProperties}><strong>{Math.min(100, trainingDays * 10)}%</strong></div>
           <p style={{ textAlign: "center" }}>Jeder gespeicherte Trainingstag erhöht deinen Fortschritt.</p>
           <Link className="club-action" href="/statistik">Alle Statistiken</Link>
         </aside>
