@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import AppShell from "@/components/app-shell";
 import "./globals.css";
 import "./steel-ui.css";
+import "./club-ui.css";
 
 export const metadata: Metadata = {
   title: "VDC Training",
