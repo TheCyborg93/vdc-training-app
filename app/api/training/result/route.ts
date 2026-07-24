@@ -46,15 +46,58 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const boardSessionId = Number(body.boardSessionId);
-    if (!Number.isInteger(boardSessionId) || !body.value || typeof body.value !== "object") {
-      return NextResponse.json({ error: "Board-Sitzung und Aufnahme sind erforderlich." }, { status: 400 });
-    }
+    const action = String(body.action ?? "visit");
+    if (!Number.isInteger(boardSessionId)) return NextResponse.json({ error: "Board-Sitzung ist erforderlich." }, { status: 400 });
 
     const session = await prisma.boardSession.findUnique({
       where: { id: boardSessionId },
       include: { trainingDay: { include: { trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } } } } },
     });
-    if (!session || session.status !== "RUNNING") return NextResponse.json({ error: "Diese Board-Sitzung läuft aktuell nicht." }, { status: 409 });
+    if (!session) return NextResponse.json({ error: "Board-Sitzung wurde nicht gefunden." }, { status: 404 });
+
+    if (action === "undo") {
+      const lastResult = await prisma.exerciseResult.findFirst({
+        where: { boardSessionId, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!lastResult) return NextResponse.json({ error: "Es gibt keine Aufnahme zum Rückgängigmachen." }, { status: 404 });
+      const value = lastResult.valueJson as Record<string, unknown>;
+      const progressBefore = value.progressBefore;
+      if (!progressBefore || typeof progressBefore !== "object" || Array.isArray(progressBefore) || !readProgress(progressBefore)) {
+        return NextResponse.json({ error: "Diese ältere Aufnahme enthält noch keinen wiederherstellbaren Trainingsstand." }, { status: 409 });
+      }
+      const restored = readProgress(progressBefore)!;
+      const restoredExercise = session.trainingDay.trainingPlan.exercises[restored.exerciseIndex];
+
+      await prisma.$transaction(async (tx) => {
+        await tx.resultAudit.create({
+          data: {
+            exerciseResultId: lastResult.id,
+            action: "UNDONE",
+            beforeJson: lastResult.valueJson as Prisma.InputJsonValue,
+            reason: String(body.reason ?? "Letzte Aufnahme rückgängig"),
+          },
+        });
+        await tx.exerciseResult.update({ where: { id: lastResult.id }, data: { deletedAt: new Date() } });
+        await tx.boardSession.update({
+          where: { id: boardSessionId },
+          data: {
+            status: "RUNNING",
+            completedAt: null,
+            currentExerciseId: restoredExercise?.exerciseId ?? null,
+            randomOrderJson: restored as Prisma.InputJsonValue,
+          },
+        });
+        if (session.trainingDay.status === "COMPLETED") {
+          await tx.trainingDay.update({ where: { id: session.trainingDayId }, data: { status: "RUNNING" } });
+        }
+      });
+
+      return NextResponse.json({ restoredProgress: restored, undoneResultId: lastResult.id });
+    }
+
+    if (session.status !== "RUNNING") return NextResponse.json({ error: "Diese Board-Sitzung läuft aktuell nicht." }, { status: 409 });
+    if (!body.value || typeof body.value !== "object") return NextResponse.json({ error: "Eine Aufnahme ist erforderlich." }, { status: 400 });
 
     const assignments = await prisma.boardAssignment.findMany({ where: { trainingDayId: session.trainingDayId, boardId: session.boardId }, orderBy: { position: "asc" } });
     const progress = readProgress(session.randomOrderJson);
@@ -103,6 +146,7 @@ export async function POST(request: Request) {
     };
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
     const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
+    const storedValue = { ...applied.visitValue, progressBefore: progress } as Prisma.InputJsonValue;
 
     await prisma.$transaction(async (tx) => {
       await tx.exerciseResult.create({
@@ -111,8 +155,9 @@ export async function POST(request: Request) {
           exercise: { connect: { id: currentPlanExercise.exerciseId } },
           player: { connect: { id: currentPlayerId } },
           roundNumber: currentState.visit,
-          valueJson: applied.visitValue as Prisma.InputJsonValue,
+          valueJson: storedValue,
           calculatedScore: applied.calculatedScore,
+          audits: { create: { action: "CREATED", afterJson: storedValue } },
         },
       });
       await tx.boardSession.update({
