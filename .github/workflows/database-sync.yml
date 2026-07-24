@@ -8,6 +8,7 @@ on:
     paths:
       - "prisma/schema.prisma"
       - "prisma/migrations/**"
+      - "scripts/seed-exercises.mjs"
       - ".github/workflows/database-sync.yml"
 
 concurrency:
@@ -44,3 +45,6 @@ jobs:
 
       - name: Synchronize database schema
         run: npx prisma db push --skip-generate
+
+      - name: Seed standard exercise catalog
+        run: node scripts/seed-exercises.mjs
