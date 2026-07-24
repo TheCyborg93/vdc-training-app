@@ -13,6 +13,26 @@ type Player = {
 
 const emptyForm = { firstName: "", lastName: "", displayName: "", skillLevel: "" };
 
+async function readJson(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: "Der Server hat keine gültige Antwort geliefert." };
+  }
+}
+
+async function requestWithTimeout(url: string, options?: RequestInit, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -20,36 +40,59 @@ export default function PlayersPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   async function loadPlayers() {
     setLoading(true);
-    const response = await fetch("/api/players", { cache: "no-store" });
-    const data = await response.json();
-    setPlayers(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setLoadError("");
+    try {
+      const response = await requestWithTimeout("/api/players");
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error ?? "Spieler konnten nicht geladen werden.");
+      setPlayers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      const text = error instanceof DOMException && error.name === "AbortError"
+        ? "Die Anfrage hat zu lange gedauert. Bitte prüfe die Datenbankverbindung in Vercel."
+        : error instanceof Error ? error.message : "Spieler konnten nicht geladen werden.";
+      setLoadError(text);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { void loadPlayers(); }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (saving) return;
     setSaving(true);
     setMessage("");
-    const url = editingId ? `/api/players/${editingId}` : "/api/players";
-    const response = await fetch(url, {
-      method: editingId ? "PATCH" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    const data = await response.json();
-    if (!response.ok) setMessage(data.error ?? "Speichern fehlgeschlagen.");
-    else {
+
+    try {
+      const url = editingId ? `/api/players/${editingId}` : "/api/players";
+      const response = await requestWithTimeout(url, {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const data = await readJson(response);
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Speichern fehlgeschlagen.");
+      }
+
       setMessage(editingId ? "Spieler aktualisiert." : "Spieler hinzugefügt.");
       setForm(emptyForm);
       setEditingId(null);
       await loadPlayers();
+    } catch (error) {
+      const text = error instanceof DOMException && error.name === "AbortError"
+        ? "Das Speichern hat zu lange gedauert. Bitte prüfe die Vercel-Datenbankvariablen."
+        : error instanceof Error ? error.message : "Speichern fehlgeschlagen.";
+      setMessage(text);
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   function edit(player: Player) {
@@ -64,20 +107,33 @@ export default function PlayersPage() {
   }
 
   async function toggleActive(player: Player) {
-    await fetch(`/api/players/${player.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: !player.active })
-    });
-    await loadPlayers();
+    setMessage("");
+    try {
+      const response = await requestWithTimeout(`/api/players/${player.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !player.active })
+      });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error ?? "Status konnte nicht geändert werden.");
+      await loadPlayers();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Status konnte nicht geändert werden.");
+    }
   }
 
   async function remove(player: Player) {
     if (!window.confirm(`${player.displayName} wirklich entfernen?`)) return;
-    const response = await fetch(`/api/players/${player.id}`, { method: "DELETE" });
-    const data = await response.json();
-    setMessage(data.deactivated ? "Spieler hatte Trainingsdaten und wurde deshalb deaktiviert." : "Spieler entfernt.");
-    await loadPlayers();
+    setMessage("");
+    try {
+      const response = await requestWithTimeout(`/api/players/${player.id}`, { method: "DELETE" });
+      const data = await readJson(response);
+      if (!response.ok) throw new Error(data.error ?? "Spieler konnte nicht entfernt werden.");
+      setMessage(data.deactivated ? "Spieler hatte Trainingsdaten und wurde deshalb deaktiviert." : "Spieler entfernt.");
+      await loadPlayers();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Spieler konnte nicht entfernt werden.");
+    }
   }
 
   return (
@@ -106,7 +162,12 @@ export default function PlayersPage() {
 
         <section>
           <div className="section-heading"><div><span className="eyebrow">Übersicht</span><h2>{players.length} Spieler</h2></div></div>
-          {loading ? <div className="card"><p>Spieler werden geladen …</p></div> : players.length === 0 ? <div className="card"><p>Noch keine Spieler angelegt.</p></div> : (
+          {loading ? <div className="card"><p>Spieler werden geladen …</p></div> : loadError ? (
+            <div className="card">
+              <p className="form-message">{loadError}</p>
+              <button className="button secondary" type="button" onClick={() => void loadPlayers()}>Erneut versuchen</button>
+            </div>
+          ) : players.length === 0 ? <div className="card"><p>Noch keine Spieler angelegt.</p></div> : (
             <div className="player-list">
               {players.map((player) => (
                 <article className={`player-admin-card ${player.active ? "" : "is-inactive"}`} key={player.id}>
@@ -116,9 +177,9 @@ export default function PlayersPage() {
                     <p>{player.firstName} {player.lastName}{player.skillLevel ? ` · Stufe ${player.skillLevel}` : ""}</p>
                   </div>
                   <div className="player-actions">
-                    <button onClick={() => edit(player)}>Bearbeiten</button>
-                    <button onClick={() => void toggleActive(player)}>{player.active ? "Deaktivieren" : "Aktivieren"}</button>
-                    <button className="danger-link" onClick={() => void remove(player)}>Entfernen</button>
+                    <button type="button" onClick={() => edit(player)}>Bearbeiten</button>
+                    <button type="button" onClick={() => void toggleActive(player)}>{player.active ? "Deaktivieren" : "Aktivieren"}</button>
+                    <button type="button" className="danger-link" onClick={() => void remove(player)}>Entfernen</button>
                   </div>
                 </article>
               ))}
