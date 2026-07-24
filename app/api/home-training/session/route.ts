@@ -63,6 +63,45 @@ export async function POST(request: Request) {
     const session = await prisma.homeTrainingSession.findUnique({ where: { id: sessionId }, include: { plan: true } });
     if (!session) return NextResponse.json({ error: "Heimtrainingseinheit wurde nicht gefunden." }, { status: 404 });
 
+    if (action === "undo") {
+      const lastResult = await prisma.homeExerciseResult.findFirst({
+        where: { homeTrainingSessionId: sessionId, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!lastResult) return NextResponse.json({ error: "Es gibt keine Aufnahme zum Rückgängigmachen." }, { status: 404 });
+
+      const value = lastResult.valueJson as Record<string, unknown>;
+      const stateBefore = value.stateBefore;
+      if (!stateBefore || typeof stateBefore !== "object" || Array.isArray(stateBefore)) {
+        return NextResponse.json({ error: "Der vorherige Übungsstand konnte nicht wiederhergestellt werden." }, { status: 409 });
+      }
+      const restoredState: StoredState = { exerciseIndex: lastResult.exerciseIndex, exerciseState: stateBefore as PlayerExerciseState };
+
+      const updated = await prisma.$transaction(async (tx) => {
+        await tx.resultAudit.create({
+          data: {
+            homeExerciseResultId: lastResult.id,
+            action: "UNDONE",
+            beforeJson: lastResult.valueJson as Prisma.InputJsonValue,
+            reason: String(body.reason ?? "Letzte Aufnahme rückgängig"),
+          },
+        });
+        await tx.homeExerciseResult.update({ where: { id: lastResult.id }, data: { deletedAt: new Date() } });
+        return tx.homeTrainingSession.update({
+          where: { id: sessionId },
+          data: {
+            status: HomeSessionStatus.RUNNING,
+            completedAt: null,
+            pausedAt: null,
+            exerciseIndex: lastResult.exerciseIndex,
+            stateJson: restoredState as Prisma.InputJsonValue,
+          },
+        });
+      });
+
+      return NextResponse.json({ session: updated, state: restoredState, undoneResultId: lastResult.id });
+    }
+
     if (action === "pause" || action === "resume") {
       const status = action === "pause" ? HomeSessionStatus.PAUSED : HomeSessionStatus.RUNNING;
       const updated = await prisma.homeTrainingSession.update({
@@ -94,7 +133,7 @@ export async function POST(request: Request) {
     const applied = applyVisit(currentExercise, stored.exerciseState, body.value as Record<string, unknown>);
     let nextExerciseIndex = stored.exerciseIndex;
     let nextExerciseState = applied.nextState;
-    let exerciseCompleted = applied.playerFinished;
+    const exerciseCompleted = applied.playerFinished;
     let completed = false;
 
     if (exerciseCompleted) {
