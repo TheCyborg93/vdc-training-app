@@ -45,6 +45,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
             const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
             return <Link key={href} href={href} className={active ? "is-active" : ""}><span>{icon}</span><b>{label}</b>{label === "Live Center" && <i className="nav-live" />}</Link>;
           })}
+          {!trainerMode && (
+            <Link href="/login" className="club-trainer-login">
+              <span>↗</span><b>Trainer Login</b>
+            </Link>
+          )}
         </nav>
 
         <div className="club-quick-card">
@@ -57,7 +62,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="club-profile">
           <span>{trainerMode ? "TR" : "SP"}</span>
           <div><small>{trainerMode ? "Trainer" : "Spieler"}</small><strong>{trainerMode ? "VDC Trainer" : "VDC Mitglied"}</strong></div>
-          <Link href="/login">›</Link>
+          <Link href={trainerMode ? "/trainer" : "/login"}>›</Link>
         </div>
       </aside>
 
@@ -70,10 +75,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </section>
 
       <nav className="club-mobile-nav">
-        {items.slice(0, 5).map(([href, label, icon]) => {
+        {items.slice(0, trainerMode ? 5 : 4).map(([href, label, icon]) => {
           const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
           return <Link key={href} href={href} className={active ? "is-active" : ""}><span>{icon}</span><small>{label.replace("Mein ", "")}</small></Link>;
         })}
+        {!trainerMode && <Link href="/login" className="club-mobile-login"><span>↗</span><small>Trainer</small></Link>}
       </nav>
     </div>
   );
