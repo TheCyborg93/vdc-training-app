@@ -4,70 +4,75 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-const items = [
-  { href: "/trainer", label: "Dashboard", icon: "M4 4h6v6H4zM14 4h6v10h-6zM4 14h6v6H4zM14 18h6v2h-6z" },
-  { href: "/training", label: "Training", icon: "M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" },
-  { href: "/trainer/trainingstag", label: "Trainingstag", icon: "M5 4h14v16H5zM8 2v4M16 2v4M5 9h14" },
-  { href: "/trainer/heimtraining", label: "Heimtraining", icon: "M3 11 12 4l9 7v9h-6v-6H9v6H3z" },
-  { href: "/trainer/trainingsplaene", label: "Trainingspläne", icon: "M6 3h12v18H6zM9 8h6M9 12h6M9 16h4" },
-  { href: "/trainer/uebungen", label: "Übungen", icon: "M4 12h4l2-5 4 10 2-5h4" },
-  { href: "/trainer/spieler", label: "Spieler", icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21c0-4 3.6-7 8-7s8 3 8 7" },
-  { href: "/trainer/boards", label: "Boards", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" },
-  { href: "/statistik", label: "Statistiken", icon: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
-  { href: "/trainer/live", label: "Live", icon: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" },
-];
+const trainerItems = [
+  ["/trainer", "Dashboard", "⌂"],
+  ["/trainer/trainingstag", "Trainingstage", "◫"],
+  ["/trainer/spieler", "Spieler", "◎"],
+  ["/trainer/boards", "Boards", "⊕"],
+  ["/trainer/uebungen", "Übungskatalog", "✕"],
+  ["/trainer/trainingsplaene", "Trainingspläne", "▣"],
+  ["/trainer/heimtraining", "Heimtraining", "⌂"],
+  ["/trainer/live", "Live Center", "●"],
+] as const;
 
-function NavIcon({ path }: { path: string }) {
-  return <svg aria-hidden="true" viewBox="0 0 24 24"><path d={path} /></svg>;
-}
+const playerItems = [
+  ["/", "Dashboard", "⌂"],
+  ["/training", "Mein Training", "🎯"],
+  ["/heimtraining", "Heimtraining", "⌂"],
+  ["/statistik", "Meine Statistik", "▥"],
+] as const;
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const isAuth = pathname === "/login";
+  if (pathname === "/login") return <>{children}</>;
 
-  if (isAuth) return <>{children}</>;
+  const trainerMode = pathname.startsWith("/trainer");
+  const items = trainerMode ? trainerItems : playerItems;
+  const homeHref = trainerMode ? "/trainer" : "/";
 
   return (
-    <div className="steel-app">
-      <aside className="steel-sidebar">
-        <Link href="/trainer" className="steel-brand" aria-label="VDC Training Dashboard">
-          <span className="steel-brand-target"><i /><i /><i /></span>
-          <span><strong>VDC Training</strong><small>Steel & Precision</small></span>
+    <div className={`club-app ${trainerMode ? "trainer-mode" : "player-mode"}`}>
+      <aside className="club-sidebar">
+        <Link href={homeHref} className="club-brand">
+          <span className="club-logo-mark"><i /><i /><i /></span>
+          <span><strong>Vestischer</strong><b>Dart Club e.V.</b></span>
         </Link>
 
-        <div className="steel-sidebar-label">Trainingszentrale</div>
-        <nav className="steel-nav" aria-label="App-Navigation">
-          {items.map((item) => {
-            const active = pathname === item.href || (item.href !== "/trainer" && pathname.startsWith(`${item.href}/`));
-            return (
-              <Link className={active ? "is-active" : ""} href={item.href} key={item.href}>
-                <NavIcon path={item.icon} />
-                <span>{item.label}</span>
-                {item.label === "Live" && <b className="live-dot" />}
-              </Link>
-            );
+        <div className="club-role">{trainerMode ? "Trainerbereich" : "Spielerbereich"}</div>
+
+        <nav className="club-nav">
+          {items.map(([href, label, icon]) => {
+            const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+            return <Link key={href} href={href} className={active ? "is-active" : ""}><span>{icon}</span><b>{label}</b>{label === "Live Center" && <i className="nav-live" />}</Link>;
           })}
         </nav>
 
-        <div className="steel-profile">
-          <span className="steel-avatar">VT</span>
-          <span><small>Angemeldet als</small><strong>VDC Trainer</strong></span>
-          <Link href="/login" aria-label="Anmeldung öffnen">↗</Link>
+        <div className="club-quick-card">
+          <small>{trainerMode ? "Schnellzugriff" : "Nächstes Training"}</small>
+          <strong>{trainerMode ? "Training verwalten" : "Vereinstraining"}</strong>
+          <p>{trainerMode ? "Pläne, Boards und Spieler organisieren." : "Aktuelle Daten werden direkt aus der Datenbank geladen."}</p>
+          <Link href={trainerMode ? "/trainer/trainingstag" : "/training"}>{trainerMode ? "Verwalten" : "Zum Training"}</Link>
+        </div>
+
+        <div className="club-profile">
+          <span>{trainerMode ? "TR" : "SP"}</span>
+          <div><small>{trainerMode ? "Trainer" : "Spieler"}</small><strong>{trainerMode ? "VDC Trainer" : "VDC Mitglied"}</strong></div>
+          <Link href="/login">›</Link>
         </div>
       </aside>
 
-      <section className="steel-stage">
-        <header className="steel-topbar">
-          <div><span className="topbar-kicker">Vestischer Dartclub</span><strong>Digitale Trainingsplattform</strong></div>
-          <div className="topbar-status"><span /><small>System online</small></div>
+      <section className="club-stage">
+        <header className="club-topbar">
+          <div><small>{trainerMode ? "Trainer Dashboard" : "Vestischer Dart Club"}</small><strong>{trainerMode ? "Alles im Blick. Alles unter Kontrolle." : "Training. Präzision. Fortschritt."}</strong></div>
+          <div className="club-system"><span /> Datenbank verbunden</div>
         </header>
-        <div className="steel-content">{children}</div>
+        <div className="club-content">{children}</div>
       </section>
 
-      <nav className="steel-mobile-nav" aria-label="Mobile Navigation">
-        {items.slice(0, 5).map((item) => {
-          const active = pathname === item.href || (item.href !== "/trainer" && pathname.startsWith(`${item.href}/`));
-          return <Link className={active ? "is-active" : ""} href={item.href} key={item.href}><NavIcon path={item.icon} /><span>{item.label}</span></Link>;
+      <nav className="club-mobile-nav">
+        {items.slice(0, 5).map(([href, label, icon]) => {
+          const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+          return <Link key={href} href={href} className={active ? "is-active" : ""}><span>{icon}</span><small>{label.replace("Mein ", "")}</small></Link>;
         })}
       </nav>
     </div>
