@@ -292,7 +292,7 @@ model ExerciseResult {
   correctedAt     DateTime?
   deletedAt       DateTime?
   createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime @default(now()) @updatedAt
 
   boardSession BoardSession @relation(fields: [boardSessionId], references: [id], onDelete: Cascade)
   exercise     Exercise     @relation(fields: [exerciseId], references: [id])
@@ -315,17 +315,17 @@ model HomeTrainingPlan {
 }
 
 model HomeTrainingSession {
-  id               Int               @id @default(autoincrement())
+  id                 Int               @id @default(autoincrement())
   homeTrainingPlanId Int
-  playerId         Int
-  status           HomeSessionStatus @default(RUNNING)
-  exerciseIndex    Int               @default(0)
-  stateJson        Json
-  startedAt        DateTime          @default(now())
-  pausedAt         DateTime?
-  completedAt      DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  playerId           Int
+  status             HomeSessionStatus @default(RUNNING)
+  exerciseIndex      Int               @default(0)
+  stateJson          Json
+  startedAt          DateTime          @default(now())
+  pausedAt           DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @default(now()) @updatedAt
 
   plan    HomeTrainingPlan  @relation(fields: [homeTrainingPlanId], references: [id], onDelete: Cascade)
   player  Player            @relation(fields: [playerId], references: [id], onDelete: Cascade)
@@ -346,7 +346,7 @@ model HomeExerciseResult {
   correctedAt           DateTime?
   deletedAt             DateTime?
   createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  updatedAt             DateTime @default(now()) @updatedAt
 
   session  HomeTrainingSession @relation(fields: [homeTrainingSessionId], references: [id], onDelete: Cascade)
   exercise Exercise            @relation(fields: [exerciseId], references: [id])
