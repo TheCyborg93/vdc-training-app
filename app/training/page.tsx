@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExerciseResultInput from "@/components/training/ExerciseResultInput";
+import ExerciseSummaryCard from "@/components/training/ExerciseSummaryCard";
 import styles from "./training.module.css";
 
 type Player = { id: number; displayName: string };
@@ -11,6 +12,7 @@ type Progress = { order: number[]; exerciseIndex: number; playerIndex: number; r
 type Session = { id: number; boardId: number; status: string; randomOrderJson: unknown; board: { id: number; name: string } };
 type PlanExercise = { id: number; position: number; durationMin: number; exercise: { id: number; name: string; description: string; resultType: string } };
 type TrainingDay = { id: number; trainingDate: string; status: string; trainingPlan: { title: string; goal: string; durationMin: number; exercises: PlanExercise[] }; assignments: Assignment[]; sessions: Session[] };
+type Summary = { title: string; kind: string; playerName?: string; highlight: string; metrics: { label: string; value: string; detail?: string }[] };
 
 function readProgress(value: unknown): Progress | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -37,6 +39,7 @@ function stateSummary(state?: ExerciseState) {
 export default function LiveTrainingPage() {
   const [training, setTraining] = useState<TrainingDay | null>(null);
   const [boardId, setBoardId] = useState<number | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -74,7 +77,7 @@ export default function LiveTrainingPage() {
   async function startTraining() {
     if (!training || !boardId) return;
     if (!window.confirm(`Training an ${boards.find((board) => board.id === boardId)?.name ?? "diesem Board"} starten? Die Reihenfolge wird zufällig ausgelost.`)) return;
-    setStarting(true); setMessage("");
+    setStarting(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/training/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trainingDayId: training.id, boardId }) });
       const data = await response.json();
@@ -88,7 +91,7 @@ export default function LiveTrainingPage() {
   async function undoLastResult() {
     if (!session) return;
     if (!window.confirm("Die letzte Aufnahme an diesem Board wirklich rückgängig machen? Spieler, Ziel und Punktestand werden zurückgesetzt.")) return;
-    setSaving(true); setMessage("");
+    setSaving(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", boardSessionId: session.id }) });
       const data = await response.json();
@@ -106,11 +109,12 @@ export default function LiveTrainingPage() {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boardSessionId: session.id, value }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
+      if (data.summary) setSummary(data.summary);
       if (data.completed) setMessage("Training an diesem Board abgeschlossen.");
       else if (data.exerciseCompleted) setMessage("Alle Spieler sind fertig. Die nächste Übung startet mit neuer zufälliger Reihenfolge.");
       else {
         const nextPlayer = orderedPlayers.find((player) => player.id === data.nextPlayerId);
-        setMessage(`Aufnahme gespeichert. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.`);
+        setMessage(data.playerFinished ? `Übung für diesen Spieler abgeschlossen. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.` : `Aufnahme gespeichert. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.`);
       }
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
@@ -122,8 +126,9 @@ export default function LiveTrainingPage() {
   return (
     <main className={`${styles.root} dashboard-page`}>
       <section className="dashboard-heading"><div><div className="eyebrow">Live-Training</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div><span className="status">{training.status === "RUNNING" ? "Läuft" : training.status === "COMPLETED" ? "Beendet" : "Veröffentlicht"}</span></section>
+      {summary && <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} />}
       <section className="live-training-layout">
-        <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => setBoardId(Number(event.target.value))}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{session?.status === "RUNNING" && <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>}{message && <p className="form-message">{message}</p>}</aside>
+        <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => { setBoardId(Number(event.target.value)); setSummary(null); }}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{session?.status === "RUNNING" && <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>}{message && <p className="form-message">{message}</p>}</aside>
         <section>
           <div className="section-heading"><div><span className="eyebrow">Zufällige Reihenfolge</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
           <div className="live-player-list">{orderedPlayers.map((player, index) => {
@@ -131,7 +136,7 @@ export default function LiveTrainingPage() {
             const isCurrent = currentPlayer?.id === player.id;
             return <article className={`live-player-card ${isCurrent ? "is-current" : ""} ${state?.completed ? "is-finished" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{isCurrent ? "Jetzt am Zug" : state?.completed ? "Fertig" : "Wartet"}</small><p>{stateSummary(state)}</p></article>;
           })}</div>
-          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && <section className="result-panel"><div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div><div className="eyebrow">Jetzt am Zug</div><h2>{currentPlayer.displayName}</h2><div className="current-player"><small>Aktuelle Übung</small><strong>{currentPlanExercise.exercise.name}</strong><span>{stateSummary(currentExerciseState ?? undefined)}</span></div><p>{currentPlanExercise.exercise.description}</p><ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} /></section>}
+          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && !summary && <section className="result-panel"><div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div><div className="eyebrow">Jetzt am Zug</div><h2>{currentPlayer.displayName}</h2><div className="current-player"><small>Aktuelle Übung</small><strong>{currentPlanExercise.exercise.name}</strong><span>{stateSummary(currentExerciseState ?? undefined)}</span></div><p>{currentPlanExercise.exercise.description}</p><ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} /></section>}
           <div className="section-heading live-exercise-heading"><div><span className="eyebrow">Trainingsablauf</span><h2>{training.trainingPlan.exercises.length} Übungen</h2></div></div>
           <div className="plan-item-list">{training.trainingPlan.exercises.map((item, index) => <article className={`plan-item ${progress?.exerciseIndex === index ? "is-active-exercise" : ""}`} key={item.id}><span className="drag-handle">{index + 1}</span><div><strong>{item.exercise.name}</strong><p>{item.exercise.description}</p></div><span>{item.durationMin} Min.</span></article>)}</div>
         </section>
