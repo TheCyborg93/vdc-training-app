@@ -98,14 +98,24 @@ model ExerciseCategory {
 model Exercise {
   id               Int                @id @default(autoincrement())
   name             String
+  shortDescription String?
   description      String             @db.Text
   instructions     String?            @db.Text
+  materials        String?
+  trainerNotes     String?            @db.Text
   defaultMinutes   Int
   minPlayers       Int                @default(1)
   maxPlayers       Int?
   difficulty       Int                @default(1)
+  intensity        Int                @default(5)
+  funFactor        Int                @default(5)
+  learningCurve    Int                @default(5)
   resultType       ExerciseResultType
   resultConfigJson Json?
+  tagsJson         Json?
+  variantsJson     Json?
+  favorite         Boolean            @default(false)
+  usageCount       Int                @default(0)
   active           Boolean            @default(true)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
