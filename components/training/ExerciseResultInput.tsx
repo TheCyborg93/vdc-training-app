@@ -1,80 +1,92 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+
+type ExerciseState = {
+  kind?: string;
+  visit?: number;
+  score?: number;
+  target?: string;
+  targetIndex?: number;
+  dartsThrown?: number;
+  hits?: number;
+};
 
 type Props = {
   resultType: string;
   exerciseName: string;
+  state?: ExerciseState | null;
   disabled?: boolean;
   onSubmit: (value: Record<string, unknown>) => Promise<void> | void;
 };
 
-export default function ExerciseResultInput({ resultType, exerciseName, disabled = false, onSubmit }: Props) {
-  const [visits, setVisits] = useState(["", "", ""]);
-  const [checkoutSuccess, setCheckoutSuccess] = useState<boolean | null>(null);
-  const [checkoutDarts, setCheckoutDarts] = useState("3");
-  const [numericValue, setNumericValue] = useState("");
-  const isBob27 = useMemo(() => exerciseName.toLowerCase().includes("bob27"), [exerciseName]);
+export default function ExerciseResultInput({ resultType, exerciseName, state, disabled = false, onSubmit }: Props) {
+  const [score, setScore] = useState("");
+  const [single, setSingle] = useState("0");
+  const [double, setDouble] = useState("0");
+  const [triple, setTriple] = useState("0");
+  const [checkout, setCheckout] = useState(false);
+  const kind = state?.kind ?? "CUSTOM";
 
-  async function submitScoring() {
-    const normalized = visits.filter((item) => item !== "").map(Number);
-    if (!normalized.length) return;
-    await onSubmit({ visits: normalized });
-    setVisits(["", "", ""]);
+  async function submitScore(extra: Record<string, unknown> = {}) {
+    if (score === "") return;
+    await onSubmit({ score: Number(score), ...extra });
+    setScore("");
+    setCheckout(false);
   }
 
-  if (resultType === "HITS_0_TO_3") {
+  if (kind === "BOB27" || kind.startsWith("AROUND_") || kind === "DOUBLES_ROUNDS" || kind === "BULL_ROUNDS" || kind === "HIT_ROUNDS") {
     return (
-      <div className="result-button-grid">
-        {[0, 1, 2, 3].map((hits) => (
-          <button disabled={disabled} key={hits} onClick={() => void onSubmit({ hits, bob27: isBob27 })}>
-            <strong>{hits}</strong><span>{hits === 1 ? "Treffer" : "Treffer"}</span>
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  if (resultType === "SCORE_0_TO_180") {
-    const total = visits.filter(Boolean).reduce((sum, value) => sum + Number(value), 0);
-    return (
-      <div className="scoring-input">
-        <div className="visit-grid">
-          {visits.map((value, index) => (
-            <label key={index}>Aufnahme {index + 1}
-              <input type="number" min="0" max="180" value={value} onChange={(event) => setVisits((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
-            </label>
-          ))}
+      <div className="visit-entry">
+        <div className="visit-target"><small>Aktuelles Ziel</small><strong>{state?.target ?? exerciseName}</strong><span>Aufnahme {state?.visit ?? 1} · 3 Darts</span></div>
+        {kind === "BOB27" && <div className="visit-score"><small>Bob’s-27-Punkte</small><strong>{state?.score ?? 27}</strong></div>}
+        <div className="result-button-grid">
+          {[0, 1, 2, 3].map((hits) => <button disabled={disabled} key={hits} onClick={() => void onSubmit({ hits })}><strong>{hits}</strong><span>{hits === 1 ? "Treffer" : "Treffer"}</span></button>)}
         </div>
-        <div className="score-preview"><span>Gesamt</span><strong>{total}</strong><small>Ø {visits.filter(Boolean).length ? (total / visits.filter(Boolean).length).toFixed(2) : "0.00"}</small></div>
-        <button className="button" disabled={disabled || visits.every((item) => item === "")} onClick={() => void submitScoring()}>Aufnahmen speichern</button>
+        <p className="visit-help">Trage nur diese Aufnahme ein. Die App berechnet automatisch das nächste Ziel und beendet die Übung erst nach dem letzten Ziel.</p>
       </div>
     );
   }
 
-  if (resultType === "CHECKOUT") {
+  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") {
     return (
-      <div className="checkout-input">
-        <div className="result-button-grid compact">
-          <button className={checkoutSuccess === true ? "selected" : ""} disabled={disabled} onClick={() => setCheckoutSuccess(true)}>Geschafft</button>
-          <button className={checkoutSuccess === false ? "selected" : ""} disabled={disabled} onClick={() => setCheckoutSuccess(false)}>Nicht geschafft</button>
+      <div className="visit-entry">
+        <div className="visit-target"><small>Aktuelle Zahl</small><strong>{state?.target}</strong><span>Aufnahme {state?.visit ?? 1}</span></div>
+        <div className="segment-entry">
+          <label>Single<input type="number" min="0" max="3" value={single} onChange={(event) => setSingle(event.target.value)} /></label>
+          <label>Double<input type="number" min="0" max="3" value={double} onChange={(event) => setDouble(event.target.value)} /></label>
+          <label>Triple<input type="number" min="0" max="3" value={triple} onChange={(event) => setTriple(event.target.value)} /></label>
         </div>
-        <label>Benötigte Darts
-          <select value={checkoutDarts} onChange={(event) => setCheckoutDarts(event.target.value)}>{[1,2,3,4,5,6,7,8,9].map((item) => <option key={item} value={item}>{item}</option>)}</select>
-        </label>
-        <button className="button" disabled={disabled || checkoutSuccess === null} onClick={() => void onSubmit({ success: checkoutSuccess, darts: Number(checkoutDarts) })}>Checkout speichern</button>
+        <button className="button" disabled={disabled} onClick={() => void onSubmit({ single: Number(single), double: Number(double), triple: Number(triple) })}>Aufnahme speichern</button>
       </div>
     );
   }
 
-  if (resultType === "BOOLEAN") {
-    return <div className="result-button-grid compact"><button disabled={disabled} onClick={() => void onSubmit({ success: true })}>Ja</button><button disabled={disabled} onClick={() => void onSubmit({ success: false })}>Nein</button></div>;
+  if (kind === "X01") {
+    return (
+      <div className="visit-entry">
+        <div className="visit-target"><small>Restscore</small><strong>{state?.score ?? 501}</strong><span>Aufnahme {state?.visit ?? 1}</span></div>
+        <div className="numeric-result"><input type="number" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Score dieser Aufnahme" /></div>
+        <label className="checkout-confirm"><input type="checkbox" checked={checkout} onChange={(event) => setCheckout(event.target.checked)} /> Mit einem Doppel ausgecheckt</label>
+        <button className="button" disabled={disabled || score === ""} onClick={() => void submitScore({ checkout })}>Aufnahme speichern</button>
+      </div>
+    );
+  }
+
+  if (kind === "SCORING" || resultType === "SCORE_0_TO_180") {
+    return (
+      <div className="visit-entry">
+        <div className="visit-target"><small>Einzelaufnahme</small><strong>3 Darts</strong><span>Aufnahme {state?.visit ?? 1}</span></div>
+        <div className="numeric-result"><input type="number" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="0 bis 180" /><button className="button" disabled={disabled || score === ""} onClick={() => void submitScore()}>Aufnahme speichern</button></div>
+      </div>
+    );
   }
 
   return (
-    <div className="numeric-result">
-      <input type="number" min="0" value={numericValue} onChange={(event) => setNumericValue(event.target.value)} placeholder="Ergebnis eingeben" />
-      <button className="button" disabled={disabled || numericValue === ""} onClick={() => void onSubmit({ value: Number(numericValue) })}>Ergebnis bestätigen</button>
+    <div className="visit-entry">
+      <div className="visit-target"><small>Aufnahme {state?.visit ?? 1}</small><strong>{exerciseName}</strong></div>
+      <div className="numeric-result"><input type="number" min="0" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Wert dieser Aufnahme" /></div>
+      <div className="result-button-grid compact"><button disabled={disabled || score === ""} onClick={() => void submitScore()}>Aufnahme speichern</button><button disabled={disabled} onClick={() => void onSubmit({ value: score === "" ? 0 : Number(score), finish: true })}>Übung abschließen</button></div>
     </div>
   );
 }
