@@ -1,16 +1,22 @@
+import { ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function parseCategories(value: unknown): string[] {
+function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function clamp(value: unknown, min: number, max: number, fallback: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
 }
 
 export async function GET() {
   try {
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
-        orderBy: [{ active: "desc" }, { name: "asc" }],
+        orderBy: [{ favorite: "desc" }, { active: "desc" }, { name: "asc" }],
         include: { categories: { include: { category: true } } }
       }),
       prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } })
@@ -28,38 +34,43 @@ export async function POST(request: Request) {
     const body = await request.json();
     const name = String(body.name ?? "").trim();
     const description = String(body.description ?? "").trim();
-    const instructions = String(body.instructions ?? "").trim() || null;
     const defaultMinutes = Number(body.defaultMinutes);
-    const minPlayers = Number(body.minPlayers ?? 1);
-    const maxPlayers = body.maxPlayers === "" || body.maxPlayers == null ? null : Number(body.maxPlayers);
-    const difficulty = Number(body.difficulty ?? 1);
-    const resultType = String(body.resultType ?? "CUSTOM");
-    const categoryNames = parseCategories(body.categories);
+    const categoryNames = parseStringArray(body.categories);
 
     if (!name || !description || !Number.isInteger(defaultMinutes) || defaultMinutes < 1) {
       return NextResponse.json({ error: "Name, Beschreibung und gültige Dauer sind erforderlich." }, { status: 400 });
     }
 
+    const duplicate = await prisma.exercise.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
+    if (duplicate) return NextResponse.json({ error: "Eine Übung mit diesem Namen existiert bereits." }, { status: 409 });
+
     const exercise = await prisma.$transaction(async (tx) => {
       const created = await tx.exercise.create({
         data: {
           name,
+          shortDescription: String(body.shortDescription ?? "").trim() || null,
           description,
-          instructions,
+          instructions: String(body.instructions ?? "").trim() || null,
+          materials: String(body.materials ?? "").trim() || null,
+          trainerNotes: String(body.trainerNotes ?? "").trim() || null,
           defaultMinutes,
-          minPlayers: Math.max(1, minPlayers),
-          maxPlayers,
-          difficulty: Math.min(5, Math.max(1, difficulty)),
-          resultType: resultType as never,
+          minPlayers: Math.max(1, Number(body.minPlayers ?? 1)),
+          maxPlayers: body.maxPlayers === "" || body.maxPlayers == null ? null : Math.max(1, Number(body.maxPlayers)),
+          difficulty: clamp(body.difficulty, 1, 10, 5),
+          intensity: clamp(body.intensity, 1, 10, 5),
+          funFactor: clamp(body.funFactor, 1, 10, 5),
+          learningCurve: clamp(body.learningCurve, 1, 10, 5),
+          resultType: String(body.resultType ?? "CUSTOM") as ExerciseResultType,
+          tagsJson: parseStringArray(body.tags),
+          variantsJson: parseStringArray(body.variants),
+          favorite: Boolean(body.favorite),
           active: true
         }
       });
 
       for (const categoryName of categoryNames) {
         const category = await tx.exerciseCategory.upsert({
-          where: { name: categoryName },
-          update: {},
-          create: { name: categoryName }
+          where: { name: categoryName }, update: {}, create: { name: categoryName }
         });
         await tx.exerciseCategoryLink.create({ data: { exerciseId: created.id, categoryId: category.id } });
       }
