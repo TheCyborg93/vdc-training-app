@@ -1,0 +1,47 @@
+name: Database Sync
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "prisma/schema.prisma"
+      - "prisma/migrations/**"
+      - ".github/workflows/database-sync.yml"
+
+concurrency:
+  group: database-sync-production
+  cancel-in-progress: false
+
+jobs:
+  sync-database:
+    name: Sync Prisma schema to Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Synchronize database schema
+        run: npx prisma db push --skip-generate
