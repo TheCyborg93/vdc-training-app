@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import styles from "./training.module.css";
 
 type Player = { id: number; displayName: string };
 type Assignment = { boardId: number; position: number; board: { id: number; name: string }; player: Player };
@@ -83,11 +84,11 @@ export default function LiveTrainingPage() {
   }
 
   if (!training) {
-    return <main className="dashboard-page"><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
+    return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
   }
 
   return (
-    <main className="dashboard-page">
+    <main className={`${styles.root} dashboard-page`}>
       <section className="dashboard-heading">
         <div><div className="eyebrow">Live-Training</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div>
         <span className="status">{training.status === "RUNNING" ? "Läuft" : "Veröffentlicht"}</span>
