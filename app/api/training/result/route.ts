@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeExerciseResult } from "@/lib/exercise-engine";
+import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
 
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -12,7 +12,13 @@ function shuffle<T>(items: T[]): T[] {
   return result;
 }
 
-type ProgressState = { order: number[]; exerciseIndex: number; playerIndex: number; roundNumber: number };
+type ProgressState = {
+  order: number[];
+  exerciseIndex: number;
+  playerIndex: number;
+  roundNumber: number;
+  playerStates: Record<string, PlayerExerciseState>;
+};
 
 function readProgress(value: unknown): ProgressState | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -21,16 +27,19 @@ function readProgress(value: unknown): ProgressState | null {
   const exerciseIndex = Number(data.exerciseIndex);
   const playerIndex = Number(data.playerIndex);
   const roundNumber = Number(data.roundNumber);
+  const playerStates = data.playerStates && typeof data.playerStates === "object" && !Array.isArray(data.playerStates)
+    ? data.playerStates as Record<string, PlayerExerciseState>
+    : {};
   if (!order.length || !Number.isInteger(exerciseIndex) || !Number.isInteger(playerIndex) || !Number.isInteger(roundNumber)) return null;
-  return { order, exerciseIndex, playerIndex, roundNumber };
+  return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const boardSessionId = Number(body.boardSessionId);
-    if (!Number.isInteger(boardSessionId) || body.value == null) {
-      return NextResponse.json({ error: "Board-Sitzung und Ergebnis sind erforderlich." }, { status: 400 });
+    if (!Number.isInteger(boardSessionId) || !body.value || typeof body.value !== "object") {
+      return NextResponse.json({ error: "Board-Sitzung und Aufnahme sind erforderlich." }, { status: 400 });
     }
 
     const session = await prisma.boardSession.findUnique({
@@ -48,26 +57,44 @@ export async function POST(request: Request) {
     const currentPlayerId = progress.order[progress.playerIndex];
     if (!currentPlanExercise || !currentPlayerId) return NextResponse.json({ error: "Aktuelle Übung oder Spieler konnte nicht bestimmt werden." }, { status: 409 });
 
-    let normalized;
-    try {
-      normalized = normalizeExerciseResult(currentPlanExercise.exercise.resultType, body.value);
-    } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Ungültiges Ergebnis." }, { status: 400 });
-    }
+    const currentState = progress.playerStates[String(currentPlayerId)] ?? createInitialExerciseState(currentPlanExercise.exercise);
+    const applied = applyVisit(currentPlanExercise.exercise, currentState, body.value as Record<string, unknown>);
+    const nextStates = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
 
-    let nextPlayerIndex = progress.playerIndex + 1;
+    let nextPlayerIndex = progress.playerIndex;
     let nextExerciseIndex = progress.exerciseIndex;
     let nextOrder = progress.order;
     let completed = false;
-    if (nextPlayerIndex >= progress.order.length) {
-      nextPlayerIndex = 0;
-      nextExerciseIndex += 1;
-      nextOrder = shuffle(assignments.map((item) => item.playerId));
-      if (nextExerciseIndex >= planExercises.length) completed = true;
+    let exerciseCompleted = false;
+
+    if (applied.playerFinished) {
+      nextPlayerIndex += 1;
+      if (nextPlayerIndex >= progress.order.length) {
+        exerciseCompleted = true;
+        nextPlayerIndex = 0;
+        nextExerciseIndex += 1;
+        if (nextExerciseIndex >= planExercises.length) {
+          completed = true;
+        } else {
+          nextOrder = shuffle(assignments.map((item) => item.playerId));
+        }
+      }
     }
 
+    let finalStates = nextStates;
+    if (exerciseCompleted && !completed) {
+      const upcoming = planExercises[nextExerciseIndex].exercise;
+      finalStates = Object.fromEntries(nextOrder.map((playerId) => [String(playerId), createInitialExerciseState(upcoming)]));
+    }
+
+    const nextProgress: ProgressState = {
+      order: nextOrder,
+      exerciseIndex: completed ? progress.exerciseIndex : nextExerciseIndex,
+      playerIndex: completed ? progress.playerIndex : nextPlayerIndex,
+      roundNumber: progress.roundNumber + 1,
+      playerStates: finalStates,
+    };
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
-    const nextProgress = completed ? progress : { order: nextOrder, exerciseIndex: nextExerciseIndex, playerIndex: nextPlayerIndex, roundNumber: progress.roundNumber + 1 };
 
     await prisma.$transaction(async (tx) => {
       await tx.exerciseResult.create({
@@ -75,14 +102,16 @@ export async function POST(request: Request) {
           boardSession: { connect: { id: session.id } },
           exercise: { connect: { id: currentPlanExercise.exerciseId } },
           player: { connect: { id: currentPlayerId } },
-          roundNumber: progress.roundNumber,
-          valueJson: normalized.value as Prisma.InputJsonValue,
-          calculatedScore: normalized.calculatedScore,
+          roundNumber: currentState.visit,
+          valueJson: applied.visitValue as Prisma.InputJsonValue,
+          calculatedScore: applied.calculatedScore,
         },
       });
       await tx.boardSession.update({
         where: { id: session.id },
-        data: completed ? { status: "COMPLETED", completedAt: new Date(), currentExerciseId: null } : { currentExerciseId: nextExercise?.exerciseId ?? null, randomOrderJson: nextProgress },
+        data: completed
+          ? { status: "COMPLETED", completedAt: new Date(), currentExerciseId: null, randomOrderJson: nextProgress }
+          : { currentExerciseId: nextExercise?.exerciseId ?? currentPlanExercise.exerciseId, randomOrderJson: nextProgress },
       });
       if (completed) {
         const openSessions = await tx.boardSession.count({ where: { trainingDayId: session.trainingDayId, status: { not: "COMPLETED" } } });
@@ -90,9 +119,9 @@ export async function POST(request: Request) {
       }
     });
 
-    return NextResponse.json({ completed, nextProgress, result: normalized });
+    return NextResponse.json({ completed, exerciseCompleted, playerFinished: applied.playerFinished, nextProgress, state: applied.nextState });
   } catch (error) {
     console.error("Training result POST failed", error);
-    return NextResponse.json({ error: "Das Ergebnis konnte nicht gespeichert werden." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Die Aufnahme konnte nicht gespeichert werden." }, { status: 500 });
   }
 }
