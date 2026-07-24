@@ -2,6 +2,7 @@ import { HomeSessionStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
+import { createExerciseSummary } from "@/lib/exercise-summary";
 
 type PlanItem = { exerciseId: number; durationMin: number; position?: number };
 type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState };
@@ -166,7 +167,17 @@ export async function POST(request: Request) {
       return { created, updated };
     });
 
-    return NextResponse.json({ result: result.created, session: result.updated, state: nextState, exerciseCompleted, completed });
+    let summary = null;
+    if (exerciseCompleted) {
+      const exerciseResults = await prisma.homeExerciseResult.findMany({
+        where: { homeTrainingSessionId: session.id, exerciseId: currentExercise.id, exerciseIndex: stored.exerciseIndex, deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { roundNumber: true, calculatedScore: true, valueJson: true },
+      });
+      summary = createExerciseSummary(currentExercise.name, applied.nextState.kind, exerciseResults, applied.nextState);
+    }
+
+    return NextResponse.json({ result: result.created, session: result.updated, state: nextState, exerciseCompleted, completed, summary });
   } catch (error) {
     console.error("Home training session POST failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Heimtraining konnte nicht gespeichert werden." }, { status: 500 });
