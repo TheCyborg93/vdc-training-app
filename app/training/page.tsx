@@ -13,6 +13,8 @@ type Session = { id: number; boardId: number; status: string; randomOrderJson: u
 type PlanExercise = { id: number; position: number; durationMin: number; exercise: { id: number; name: string; description: string; resultType: string } };
 type TrainingDay = { id: number; trainingDate: string; status: string; trainingPlan: { title: string; goal: string; durationMin: number; exercises: PlanExercise[] }; assignments: Assignment[]; sessions: Session[] };
 
+type InfoMetric = { label: string; value: string; detail?: string };
+
 function readProgress(value: unknown): Progress | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
@@ -23,6 +25,58 @@ function readProgress(value: unknown): Progress | null {
   const playerStates = data.playerStates && typeof data.playerStates === "object" && !Array.isArray(data.playerStates) ? data.playerStates as Record<string, ExerciseState> : {};
   if (!order.length || !Number.isInteger(exerciseIndex) || !Number.isInteger(playerIndex) || !Number.isInteger(roundNumber)) return null;
   return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
+}
+
+function competitionInfo(state: ExerciseState | null, exerciseName: string, boardName: string, exerciseIndex: number, exerciseCount: number): InfoMetric[] {
+  const kind = state?.kind ?? "CUSTOM";
+  const visit = state?.visit ?? 1;
+  const darts = state?.dartsThrown ?? 0;
+
+  if (kind === "BOB27") {
+    return [
+      { label: "Doppel-Fortschritt", value: `${Math.min((state?.targetIndex ?? 0) + 1, 21)} / 21`, detail: "D1 bis Doppel-Bull" },
+      { label: "Aktuelle Aufnahme", value: String(visit), detail: `${darts} Darts gespielt` },
+      { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+    ];
+  }
+
+  if (kind === "X01") {
+    return [
+      { label: "Restscore", value: String(state?.score ?? 501), detail: "Double-Out" },
+      { label: "Aufnahme", value: String(visit), detail: `${darts} Darts gespielt` },
+      { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+    ];
+  }
+
+  if (kind === "SCORING") {
+    return [
+      { label: "Aufnahmen", value: String(Math.max(0, visit - 1)), detail: `${darts} Darts gespielt` },
+      { label: "Aktuelles Ziel", value: state?.target ?? "Scoring", detail: exerciseName },
+      { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+    ];
+  }
+
+  if (kind.startsWith("AROUND_")) {
+    return [
+      { label: "Erreichtes Ziel", value: state?.target ?? "1", detail: `Position ${(state?.targetIndex ?? 0) + 1}` },
+      { label: "Aufnahme", value: String(visit), detail: `${darts} Darts gespielt` },
+      { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+    ];
+  }
+
+  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") {
+    return [
+      { label: "Aktuelle Zahl", value: state?.target ?? "1", detail: "Single · Doppel · Triple" },
+      { label: "Gesamtstand", value: String(state?.score ?? 0), detail: `Aufnahme ${visit}` },
+      { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+    ];
+  }
+
+  return [
+    { label: "Übung", value: exerciseName, detail: state?.target ? `Ziel ${state.target}` : "Aktive Trainingseinheit" },
+    { label: "Aufnahme", value: String(visit), detail: `${darts} Darts gespielt` },
+    { label: "Board", value: boardName, detail: `Übung ${exerciseIndex + 1} von ${exerciseCount}` },
+  ];
 }
 
 export default function LiveTrainingPage() {
@@ -73,6 +127,9 @@ export default function LiveTrainingPage() {
   const currentExerciseState = currentPlayer && progress?.playerStates ? progress.playerStates[String(currentPlayer.id)] ?? null : null;
   const progressPercent = progress && training ? Math.round(((progress.exerciseIndex + 1) / Math.max(training.trainingPlan.exercises.length, 1)) * 100) : 0;
   const focusActive = Boolean(session && (session.status === "RUNNING" || session.status === "PAUSED") && currentPlanExercise && currentPlayer && progress);
+  const infoMetrics = currentPlanExercise && progress && session
+    ? competitionInfo(currentExerciseState, currentPlanExercise.exercise.name, session.board.name, progress.exerciseIndex, training?.trainingPlan.exercises.length ?? 1)
+    : [];
 
   async function startTraining() {
     if (!training || !boardId) return;
@@ -85,6 +142,23 @@ export default function LiveTrainingPage() {
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
     finally { setStarting(false); }
+  }
+
+  async function boardControl(action: "pause" | "resume") {
+    if (!session) return;
+    setSaving(true); setMessage("");
+    try {
+      const response = await fetch("/api/trainer/live/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ boardSessionId: session.id, action }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Board konnte nicht gesteuert werden.");
+      setMessage(action === "pause" ? "Training pausiert." : "Training fortgesetzt.");
+      await loadTraining();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Boardsteuerung fehlgeschlagen."); }
+    finally { setSaving(false); }
   }
 
   async function undoLastResult() {
@@ -160,26 +234,29 @@ export default function LiveTrainingPage() {
             </article>
 
             <article className="result-grid-free">
-              <div>
-                <small>Übung</small>
-                <strong>{currentPlanExercise.exercise.name}</strong>
-                <p>{currentPlanExercise.exercise.description}</p>
+              <div className="competition-live-metrics">
+                {infoMetrics.map((metric) => (
+                  <div key={metric.label}>
+                    <small>{metric.label}</small>
+                    <strong>{metric.value}</strong>
+                    {metric.detail && <span>{metric.detail}</span>}
+                  </div>
+                ))}
               </div>
-              <div className="result-grid-progress">
-                <span style={{ width: `${progressPercent}%` }} />
-              </div>
+              <div className="result-grid-progress"><span style={{ width: `${progressPercent}%` }} /></div>
             </article>
 
             <section className="result-grid-engine">
               {session.status === "RUNNING" ? (
                 <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />
               ) : (
-                <div className="result-grid-paused"><strong>Training pausiert</strong><span>Die Eingabe ist aktuell gesperrt.</span></div>
+                <div className="result-grid-paused"><strong>Training pausiert</strong><span>Fortsetzen, um wieder Ergebnisse einzutragen.</span></div>
               )}
             </section>
 
-            <footer className="result-grid-undo">
-              <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig machen</button>
+            <footer className="result-grid-undo competition-actions">
+              <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>
+              <button className="button" disabled={saving} onClick={() => void boardControl(session.status === "PAUSED" ? "resume" : "pause")}>{session.status === "PAUSED" ? "Training fortsetzen" : "Training pausieren"}</button>
               {message && <p className="form-message">{message}</p>}
             </footer>
           </section>
