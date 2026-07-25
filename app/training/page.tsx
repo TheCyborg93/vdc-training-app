@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExerciseResultInput from "@/components/training/ExerciseResultInput";
-import ExerciseSummaryCard from "@/components/training/ExerciseSummaryCard";
+import TrainingReportView, { type TrainingReportData } from "@/components/training/TrainingReportView";
 import styles from "./training.module.css";
 
 type Player = { id: number; displayName: string };
@@ -12,7 +12,6 @@ type Progress = { order: number[]; exerciseIndex: number; playerIndex: number; r
 type Session = { id: number; boardId: number; status: string; randomOrderJson: unknown; board: { id: number; name: string } };
 type PlanExercise = { id: number; position: number; durationMin: number; exercise: { id: number; name: string; description: string; resultType: string } };
 type TrainingDay = { id: number; trainingDate: string; status: string; trainingPlan: { title: string; goal: string; durationMin: number; exercises: PlanExercise[] }; assignments: Assignment[]; sessions: Session[] };
-type Summary = { title: string; kind: string; playerName?: string; highlight: string; metrics: { label: string; value: string; detail?: string }[] };
 
 function readProgress(value: unknown): Progress | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -39,7 +38,7 @@ function stateSummary(state?: ExerciseState) {
 export default function LiveTrainingPage() {
   const [training, setTraining] = useState<TrainingDay | null>(null);
   const [boardId, setBoardId] = useState<number | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [report, setReport] = useState<TrainingReportData | null>(null);
   const [starting, setStarting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -55,19 +54,17 @@ export default function LiveTrainingPage() {
   useEffect(() => {
     const controller = new AbortController();
     void loadTraining(controller.signal);
-
     const refresh = () => {
-      if (document.visibilityState === "visible" && !saving) void loadTraining();
+      if (document.visibilityState === "visible" && !saving && !report) void loadTraining();
     };
     const timer = window.setInterval(refresh, 12000);
     document.addEventListener("visibilitychange", refresh);
-
     return () => {
       controller.abort();
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [saving]);
+  }, [saving, report]);
 
   const boards = useMemo(() => {
     if (!training) return [];
@@ -90,7 +87,7 @@ export default function LiveTrainingPage() {
   async function startTraining() {
     if (!training || !boardId) return;
     if (!window.confirm(`Training an ${boards.find((board) => board.id === boardId)?.name ?? "diesem Board"} starten? Die Reihenfolge wird zufällig ausgelost.`)) return;
-    setStarting(true); setMessage(""); setSummary(null);
+    setStarting(true); setMessage(""); setReport(null);
     try {
       const response = await fetch("/api/training/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trainingDayId: training.id, boardId }) });
       const data = await response.json();
@@ -103,7 +100,7 @@ export default function LiveTrainingPage() {
   async function undoLastResult() {
     if (!session) return;
     if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen?")) return;
-    setSaving(true); setMessage(""); setSummary(null);
+    setSaving(true); setMessage(""); setReport(null);
     try {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", boardSessionId: session.id }) });
       const data = await response.json();
@@ -121,16 +118,22 @@ export default function LiveTrainingPage() {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boardSessionId: session.id, value }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
-      if (data.summary) setSummary(data.summary);
-      if (data.completed) setMessage("Training an diesem Board abgeschlossen.");
-      else if (data.exerciseCompleted) setMessage("Nächste Übung startet mit einer neuen Reihenfolge.");
-      else {
+      if (data.completed && data.report) {
+        setReport(data.report as TrainingReportData);
+        setMessage("");
+      } else if (data.exerciseCompleted) {
+        setMessage("Übung abgeschlossen. Die nächste Übung startet mit einer neuen Reihenfolge.");
+      } else {
         const following = orderedPlayers.find((player) => player.id === data.nextPlayerId);
         setMessage(`Gespeichert. Jetzt ist ${following?.displayName ?? "der nächste Spieler"} dran.`);
       }
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
     finally { setSaving(false); }
+  }
+
+  if (report) {
+    return <div className="training-focus-overlay"><TrainingReportView report={report} onClose={() => setReport(null)} /></div>;
   }
 
   if (!training) return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
@@ -143,33 +146,21 @@ export default function LiveTrainingPage() {
             <div className="training-focus-brand"><i /><div><small>{session.board.name} · Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</small><strong>VDC Trainingstag</strong></div></div>
             <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
           </header>
-
-          {summary ? <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} /> : (
-            <section className="training-focus-card">
-              <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
-              <div className="eyebrow">Aktuelle Übung</div>
-              <h1>{currentPlanExercise.exercise.name}</h1>
-              <p>{currentPlanExercise.exercise.description}</p>
-
-              <div className="training-focus-player">
-                <div><small>Jetzt am Zug</small><strong>{currentPlayer.displayName}</strong></div>
-                <span>{stateSummary(currentExerciseState ?? undefined)}</span>
-              </div>
-
-              <div className="training-focus-meta">
-                <div><small>Board</small><strong>{session.board.name}</strong></div>
-                <div><small>Danach</small><strong>{nextPlayer?.displayName ?? "–"}</strong></div>
-                <div><small>Reihenfolge</small><strong>{progress.playerIndex + 1} / {orderedPlayers.length}</strong></div>
-              </div>
-
-              {session.status === "RUNNING" && <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />}
-
-              <div className="training-focus-actions">
-                <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>
-              </div>
-              {message && <p className="form-message">{message}</p>}
-            </section>
-          )}
+          <section className="training-focus-card">
+            <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
+            <div className="eyebrow">Aktuelle Übung</div>
+            <h1>{currentPlanExercise.exercise.name}</h1>
+            <p>{currentPlanExercise.exercise.description}</p>
+            <div className="training-focus-player"><div><small>Jetzt am Zug</small><strong>{currentPlayer.displayName}</strong></div><span>{stateSummary(currentExerciseState ?? undefined)}</span></div>
+            <div className="training-focus-meta">
+              <div><small>Board</small><strong>{session.board.name}</strong></div>
+              <div><small>Danach</small><strong>{nextPlayer?.displayName ?? "–"}</strong></div>
+              <div><small>Reihenfolge</small><strong>{progress.playerIndex + 1} / {orderedPlayers.length}</strong></div>
+            </div>
+            {session.status === "RUNNING" && <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />}
+            <div className="training-focus-actions"><button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button></div>
+            {message && <p className="form-message">{message}</p>}
+          </section>
         </main>
       </div>
     );
@@ -180,7 +171,7 @@ export default function LiveTrainingPage() {
       <section className="dashboard-heading"><div><div className="eyebrow">Trainingstag</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div><span className="status">{training.status === "RUNNING" ? "Läuft" : training.status === "COMPLETED" ? "Beendet" : "Bereit"}</span></section>
       <section className="live-training-layout">
         <aside className="card admin-form">
-          <label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => { setBoardId(Number(event.target.value)); setSummary(null); }}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label>
+          <label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => { setBoardId(Number(event.target.value)); setReport(null); }}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label>
           <div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div>
           <button className="button full" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : starting ? "Startet …" : "Training starten"}</button>
           {message && <p className="form-message">{message}</p>}
