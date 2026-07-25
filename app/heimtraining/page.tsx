@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ExerciseResultInput from "@/components/training/ExerciseResultInput";
-import ExerciseSummaryCard from "@/components/training/ExerciseSummaryCard";
+import TrainingReportView, { type TrainingReportData } from "@/components/training/TrainingReportView";
 import type { PlayerExerciseState } from "@/lib/exercise-session-engine";
 
 type Player = { id: number; displayName: string };
@@ -12,7 +12,6 @@ type Plan = { id: number; playerId: number; title: string; goal: string; duratio
 type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState };
 type SavedResult = { id: number; exerciseId: number; roundNumber: number; calculatedScore: number | null; exercise?: { name: string } };
 type Session = { id: number; homeTrainingPlanId: number; playerId: number; status: string; exerciseIndex: number; stateJson: unknown; plan?: Plan; results?: SavedResult[] };
-type Summary = { title: string; kind: string; highlight: string; metrics: { label: string; value: string; detail?: string }[] };
 
 const goals = ["Scoring", "Doppel", "Checkout", "Stellen", "Mental", "Konstanz", "Wurftechnik", "Matchtraining"];
 
@@ -40,7 +39,7 @@ export default function HomeTrainingPage() {
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [exerciseState, setExerciseState] = useState<PlayerExerciseState | null>(null);
   const [history, setHistory] = useState<SavedResult[]>([]);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [report, setReport] = useState<TrainingReportData | null>(null);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -109,7 +108,7 @@ export default function HomeTrainingPage() {
 
   async function startPlan(plan: Plan) {
     if (!playerId) return;
-    setSaving(true); setMessage(""); setSummary(null);
+    setSaving(true); setMessage(""); setReport(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", planId: plan.id, playerId }) });
       const data = await response.json();
@@ -132,8 +131,13 @@ export default function HomeTrainingPage() {
       if (!response.ok) throw new Error(data.error ?? "Aktion fehlgeschlagen.");
       setSession(data.session);
       setRunning(action === "resume");
-      setMessage(action === "pause" ? "Training pausiert und gespeichert." : action === "resume" ? "Training fortgesetzt." : "Training abgeschlossen.");
-      if (action === "finish" || action === "cancel") await load(playerId);
+      if (action === "finish" && data.report) {
+        setReport(data.report as TrainingReportData);
+        setMessage("");
+      } else {
+        setMessage(action === "pause" ? "Training pausiert und gespeichert." : action === "resume" ? "Training fortgesetzt." : "Training abgeschlossen.");
+      }
+      if (action === "cancel") await load(playerId);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aktion fehlgeschlagen."); }
     finally { setSaving(false); }
   }
@@ -141,7 +145,7 @@ export default function HomeTrainingPage() {
   async function undoLastVisit() {
     if (!session || history.length === 0) return;
     if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen?")) return;
-    setSaving(true); setMessage(""); setSummary(null);
+    setSaving(true); setMessage(""); setReport(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", sessionId: session.id }) });
       const data = await response.json();
@@ -165,14 +169,23 @@ export default function HomeTrainingPage() {
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
       setSession(data.session);
       setHistory((current) => [...current, data.result]);
-      if (data.summary) setSummary(data.summary);
       const stored = readState(data.state);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
-      if (data.completed) { setRunning(false); setMessage("Heimtraining vollständig abgeschlossen."); }
-      else if (data.exerciseCompleted) setMessage("Übung abgeschlossen. Deine Auswertung ist bereit.");
-      else setMessage(`Gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
+      if (data.completed && data.report) {
+        setRunning(false);
+        setReport(data.report as TrainingReportData);
+        setMessage("");
+      } else if (data.exerciseCompleted) {
+        setMessage("Übung abgeschlossen. Die nächste Übung startet direkt.");
+      } else {
+        setMessage(`Gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
+      }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
     finally { setSaving(false); }
+  }
+
+  if (report) {
+    return <div className="training-focus-overlay"><TrainingReportView report={report} onClose={() => { setReport(null); void load(playerId); }} /></div>;
   }
 
   if (focusActive && activePlan && session && currentExercise && exerciseState) {
@@ -183,37 +196,26 @@ export default function HomeTrainingPage() {
             <div className="training-focus-brand"><i /><div><small>{selectedPlayer?.displayName ?? "Heimtraining"} · Übung {exerciseIndex + 1} von {planItems.length}</small><strong>VDC Heimtraining</strong></div></div>
             <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
           </header>
-
-          {summary ? <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} /> : (
-            <section className="training-focus-card">
-              <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
-              <div className="eyebrow">Aktuelle Übung</div>
-              <h1>{currentExercise.name}</h1>
-              <p>{currentExercise.description}</p>
-
-              <div className="training-focus-player">
-                <div><small>Aufnahme</small><strong>{exerciseState.visit}</strong></div>
-                <span>{exerciseState.target ? `Ziel ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand ${exerciseState.score}` : ""}</span>
-              </div>
-
-              <div className="training-focus-meta">
-                <div><small>Trainingsziel</small><strong>{activePlan.goal}</strong></div>
-                <div><small>Dauer</small><strong>{activePlan.durationMin} Min.</strong></div>
-                <div><small>Gespeichert</small><strong>{history.length} Aufnahmen</strong></div>
-              </div>
-
-              {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
-
-              <div className="training-focus-actions">
-                {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
-                <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
-                <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
-              </div>
-
-              {history.length > 0 && <div className="training-focus-history club-list">{history.filter((item) => item.exerciseId === currentExercise.id).slice(-4).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
-              {message && <p className="form-message">{message}</p>}
-            </section>
-          )}
+          <section className="training-focus-card">
+            <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
+            <div className="eyebrow">Aktuelle Übung</div>
+            <h1>{currentExercise.name}</h1>
+            <p>{currentExercise.description}</p>
+            <div className="training-focus-player"><div><small>Aufnahme</small><strong>{exerciseState.visit}</strong></div><span>{exerciseState.target ? `Ziel ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand ${exerciseState.score}` : ""}</span></div>
+            <div className="training-focus-meta">
+              <div><small>Trainingsziel</small><strong>{activePlan.goal}</strong></div>
+              <div><small>Dauer</small><strong>{activePlan.durationMin} Min.</strong></div>
+              <div><small>Gespeichert</small><strong>{history.length} Aufnahmen</strong></div>
+            </div>
+            {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
+            <div className="training-focus-actions">
+              {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+              <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
+              <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
+            </div>
+            {history.length > 0 && <div className="training-focus-history club-list">{history.filter((item) => item.exerciseId === currentExercise.id).slice(-4).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
+            {message && <p className="form-message">{message}</p>}
+          </section>
         </main>
       </div>
     );
@@ -222,16 +224,8 @@ export default function HomeTrainingPage() {
   return (
     <main className="dashboard-page">
       <section className="dashboard-heading"><div><div className="eyebrow">Spielerbereich</div><h1>Heimtraining</h1><p>Dein Trainingsplan, deine Aufnahmen und dein Fortschritt werden direkt aus der Datenbank geladen.</p></div></section>
-
-      <section className="club-panel admin-form" style={{ marginBottom: 24 }}>
-        <label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setSummary(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label>
-      </section>
-
-      <section className="section-block">
-        <div className="section-heading"><div><span className="eyebrow">Meine Pläne</span><h2>{plans.length} verfügbar</h2></div></div>
-        <div className="saved-plan-grid">{plans.map((plan) => <article className="saved-plan-card" key={plan.id}><span className="status">{plan.goal}</span><h3>{plan.title}</h3><p>{plan.durationMin} Minuten · {readItems(plan.planJson).length} Übungen</p><button className="button full" disabled={saving} onClick={() => void startPlan(plan)}>Training starten</button></article>)}</div>
-      </section>
-
+      <section className="club-panel admin-form" style={{ marginBottom: 24 }}><label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setReport(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label></section>
+      <section className="section-block"><div className="section-heading"><div><span className="eyebrow">Meine Pläne</span><h2>{plans.length} verfügbar</h2></div></div><div className="saved-plan-grid">{plans.map((plan) => <article className="saved-plan-card" key={plan.id}><span className="status">{plan.goal}</span><h3>{plan.title}</h3><p>{plan.durationMin} Minuten · {readItems(plan.planJson).length} Übungen</p><button className="button full" disabled={saving} onClick={() => void startPlan(plan)}>Training starten</button></article>)}</div></section>
       {plans.length === 0 && <section className="club-panel admin-form"><div className="section-heading"><div><span className="eyebrow">Kein Plan vorhanden</span><h2>Eigenen Plan erstellen</h2></div></div><label>Ziel<select value={goal} onChange={(event) => setGoal(event.target.value)}>{goals.map((item) => <option key={item}>{item}</option>)}</select></label><label>Dauer<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>{[30,45,60,75,90].map((item) => <option key={item} value={item}>{item} Minuten</option>)}</select></label><button className="button" onClick={createOwnPlan}>Plan erstellen lassen</button></section>}
       {message && <p className="form-message" style={{ marginTop: 18 }}>{message}</p>}
     </main>
