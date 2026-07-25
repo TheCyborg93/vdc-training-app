@@ -23,6 +23,10 @@ export type PlayerExerciseState = {
   deadlineAt?: number;
   completionMode?: string;
   completionValue?: number;
+  baseTarget?: number;
+  attemptDarts?: number;
+  highestTarget?: number;
+  firstVisitFinishes?: number;
 };
 
 function text(exercise: ExerciseDefinition) {
@@ -30,8 +34,9 @@ function text(exercise: ExerciseDefinition) {
 }
 
 export function detectExerciseKind(exercise: ExerciseDefinition): string {
-  if (exercise.engine && exercise.engine !== "AUTO") return exercise.engine;
   const value = text(exercise);
+  if (/121\s*(in|mit)?\s*9|121.*9\s*darts|121.*neun/.test(value)) return "GAME_121";
+  if (exercise.engine && exercise.engine !== "AUTO") return exercise.engine;
   if (/bob.?s?\s*27|bob27/.test(value)) return "BOB27";
   if (/around the clock|around the world|rund um die uhr|1\s*[-–]\s*20/.test(value)) {
     if (/doppel|double/.test(value)) return "AROUND_DOUBLES";
@@ -40,7 +45,7 @@ export function detectExerciseKind(exercise: ExerciseDefinition): string {
   }
   if (/shanghai/.test(value)) return "SHANGHAI";
   if (/jdc challenge/.test(value)) return "JDC_CHALLENGE";
-  if (/121|120|170|finish.*leiter|checkout.*leiter/.test(value)) return "CHECKOUT_LADDER";
+  if (/120|170|finish.*leiter|checkout.*leiter/.test(value)) return "CHECKOUT_LADDER";
   if (/checkout|finish|check out|stellen/.test(value)) return "CHECKOUT_LADDER";
   if (/501|301|x01/.test(value)) return "X01";
   if (/scoring|high score|60 darts|100 darts|aufnahme/.test(value) || exercise.resultType === "SCORE_0_TO_180") return "SCORING";
@@ -69,6 +74,7 @@ export function createInitialExerciseState(exercise: ExerciseDefinition): Player
   if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0, ...config };
   if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0, ...config };
   if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0, ...config };
+  if (kind === "GAME_121") return { kind, visit: 1, completed: false, score: 121, target: "121", baseTarget: 121, attemptDarts: 0, dartsThrown: 0, attempts: 0, successes: 0, highestTarget: 121, firstVisitFinishes: 0, ...config };
   if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0, ...config };
   return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0, ...config };
 }
@@ -118,6 +124,74 @@ export function applyVisit(exercise: ExerciseDefinition, state: PlayerExerciseSt
     Object.assign(next, { targetIndex, target, completed, hits: (state.hits ?? 0) + hits, dartsThrown: (state.dartsThrown ?? 0) + 3 });
     const finalState = withConfiguredCompletion(exercise, next);
     return { nextState: finalState, visitValue: { ...visitValue, hits, targetAfter: target }, calculatedScore: targetIndex, playerFinished: finalState.completed };
+  }
+
+  if (state.kind === "GAME_121") {
+    const currentTarget = Math.max(121, number(state.target, 121));
+    const baseTarget = Math.max(121, state.baseTarget ?? 121);
+    const before = state.score ?? currentTarget;
+    const scored = Math.max(0, Math.min(180, Math.trunc(number(raw.score ?? raw.value))));
+    const dartsUsed = Math.max(1, Math.min(3, Math.trunc(number(raw.dartsUsed, 3))));
+    const checkout = Boolean(raw.checkout);
+    const calculatedRemaining = before - scored;
+    const bust = calculatedRemaining < 0 || calculatedRemaining === 1 || (calculatedRemaining === 0 && !checkout);
+    const remaining = bust ? before : calculatedRemaining;
+    const attemptDarts = (state.attemptDarts ?? 0) + dartsUsed;
+    const totalDarts = (state.dartsThrown ?? 0) + dartsUsed;
+
+    if (remaining === 0 && checkout) {
+      const nextTarget = currentTarget + 1;
+      const completed = currentTarget >= 170;
+      const firstVisitFinish = attemptDarts <= 3;
+      const securedBase = firstVisitFinish ? nextTarget : baseTarget;
+      Object.assign(next, {
+        score: completed ? 0 : nextTarget,
+        target: completed ? "170 geschafft" : String(nextTarget),
+        baseTarget: completed ? currentTarget : securedBase,
+        attemptDarts: 0,
+        dartsThrown: totalDarts,
+        attempts: (state.attempts ?? 0) + 1,
+        successes: (state.successes ?? 0) + 1,
+        highestTarget: Math.max(state.highestTarget ?? 121, currentTarget),
+        firstVisitFinishes: (state.firstVisitFinishes ?? 0) + (firstVisitFinish ? 1 : 0),
+        completed,
+      });
+      const finalState = withConfiguredCompletion(exercise, next);
+      return {
+        nextState: finalState,
+        visitValue: { ...visitValue, scored, dartsUsed, checkout: true, bust: false, attemptDarts, targetCompleted: currentTarget, nextTarget, securedBase },
+        calculatedScore: currentTarget,
+        playerFinished: finalState.completed,
+      };
+    }
+
+    if (attemptDarts >= 9) {
+      Object.assign(next, {
+        score: baseTarget,
+        target: String(baseTarget),
+        baseTarget,
+        attemptDarts: 0,
+        dartsThrown: totalDarts,
+        attempts: (state.attempts ?? 0) + 1,
+        completed: false,
+      });
+      const finalState = withConfiguredCompletion(exercise, next);
+      return {
+        nextState: finalState,
+        visitValue: { ...visitValue, scored, dartsUsed, checkout: false, bust, attemptFailed: true, resetTo: baseTarget },
+        calculatedScore: scored,
+        playerFinished: finalState.completed,
+      };
+    }
+
+    Object.assign(next, { score: remaining, attemptDarts, dartsThrown: totalDarts, completed: false });
+    const finalState = withConfiguredCompletion(exercise, next);
+    return {
+      nextState: finalState,
+      visitValue: { ...visitValue, scored, dartsUsed, checkout: false, bust, remaining, attemptDarts },
+      calculatedScore: scored,
+      playerFinished: finalState.completed,
+    };
   }
 
   if (state.kind === "X01") {
