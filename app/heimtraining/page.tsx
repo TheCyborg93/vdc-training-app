@@ -50,16 +50,27 @@ export default function HomeTrainingPage() {
     const response = await fetch(`/api/home-training${id ? `?playerId=${id}` : ""}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) { setMessage(data.error ?? "Heimtraining konnte nicht geladen werden."); return; }
-    setPlayers(data.players ?? []); setExercises(data.exercises ?? []); setPlans(data.plans ?? []);
-    if (!id && data.players?.length) { const firstId = data.players[0].id; setPlayerId(firstId); await load(firstId); return; }
+    setPlayers(data.players ?? []);
+    setExercises(data.exercises ?? []);
+    setPlans(data.plans ?? []);
+
+    if (!id && data.players?.length) {
+      const firstId = data.players[0].id;
+      setPlayerId(firstId);
+      await load(firstId);
+      return;
+    }
+
     const active = data.activeSession as Session | null;
     if (active) {
       const stored = readState(active.stateJson);
       const plan = (data.plans ?? []).find((item: Plan) => item.id === active.homeTrainingPlanId) ?? active.plan ?? null;
-      setSession(active); setActivePlan(plan); setHistory(active.results ?? []);
+      setSession(active);
+      setActivePlan(plan);
+      setHistory(active.results ?? []);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       setRunning(active.status === "RUNNING");
-      setMessage(active.status === "PAUSED" ? "Pausiertes Heimtraining gefunden. Du kannst direkt fortsetzen." : "Laufendes Heimtraining wurde wiederhergestellt.");
+      setMessage(active.status === "PAUSED" ? "Dein pausiertes Training ist gespeichert." : "Dein laufendes Training wurde wiederhergestellt.");
     } else {
       setSession(null); setActivePlan(null); setHistory([]); setRunning(false); setExerciseState(null); setExerciseIndex(0);
     }
@@ -70,21 +81,30 @@ export default function HomeTrainingPage() {
   const planItems = useMemo(() => activePlan ? readItems(activePlan.planJson) : [], [activePlan]);
   const currentItem = planItems[exerciseIndex];
   const currentExercise = exercises.find((exercise) => exercise.id === Number(currentItem?.exerciseId));
+  const selectedPlayer = players.find((player) => player.id === playerId);
+  const progressPercent = Math.round(((exerciseIndex + 1) / Math.max(planItems.length, 1)) * 100);
+  const focusActive = Boolean(activePlan && session && currentExercise && exerciseState);
 
   async function createOwnPlan() {
     if (!playerId) return;
     const matching = exercises.filter((exercise) => exercise.categories.some((link) => link.category.name.toLowerCase() === goal.toLowerCase()));
     const pool = matching.length ? matching : exercises;
     if (!pool.length) { setMessage("Für dieses Ziel sind noch keine Übungen verfügbar."); return; }
-    const items: PlanItem[] = []; let remaining = duration; let index = 0;
+    const items: PlanItem[] = [];
+    let remaining = duration;
+    let index = 0;
     while (remaining > 0 && index < pool.length * 4) {
-      const exercise = pool[index % pool.length]; const minutes = Math.min(exercise.defaultMinutes, remaining);
-      items.push({ exerciseId: exercise.id, durationMin: minutes, position: index }); remaining -= minutes; index += 1;
+      const exercise = pool[index % pool.length];
+      const minutes = Math.min(exercise.defaultMinutes, remaining);
+      items.push({ exerciseId: exercise.id, durationMin: minutes, position: index });
+      remaining -= minutes;
+      index += 1;
     }
     const response = await fetch("/api/home-training", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, title: `${goal}-Heimtraining · ${duration} Minuten`, goal, durationMin: duration, items }) });
     const data = await response.json();
     if (!response.ok) { setMessage(data.error ?? "Plan konnte nicht erstellt werden."); return; }
-    setMessage("Dein Heimtrainingsplan wurde erstellt."); await load(playerId);
+    setMessage("Dein Heimtrainingsplan wurde erstellt.");
+    await load(playerId);
   }
 
   async function startPlan(plan: Plan) {
@@ -98,7 +118,7 @@ export default function HomeTrainingPage() {
       const stored = readState(data.session.stateJson);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       setRunning(data.session.status === "RUNNING");
-      setMessage(data.resumed ? "Vorhandenes Heimtraining fortgesetzt." : "Heimtraining gestartet und in der Datenbank gespeichert.");
+      setMessage(data.resumed ? "Training fortgesetzt." : "Training gestartet.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
     finally { setSaving(false); }
   }
@@ -112,7 +132,7 @@ export default function HomeTrainingPage() {
       if (!response.ok) throw new Error(data.error ?? "Aktion fehlgeschlagen.");
       setSession(data.session);
       setRunning(action === "resume");
-      setMessage(action === "pause" ? "Heimtraining pausiert. Dein Stand ist gespeichert." : action === "resume" ? "Heimtraining fortgesetzt." : "Heimtraining abgeschlossen.");
+      setMessage(action === "pause" ? "Training pausiert und gespeichert." : action === "resume" ? "Training fortgesetzt." : "Training abgeschlossen.");
       if (action === "finish" || action === "cancel") await load(playerId);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aktion fehlgeschlagen."); }
     finally { setSaving(false); }
@@ -120,7 +140,7 @@ export default function HomeTrainingPage() {
 
   async function undoLastVisit() {
     if (!session || history.length === 0) return;
-    if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen? Punktestand und Ziel werden zurückgesetzt.")) return;
+    if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen?")) return;
     setSaving(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", sessionId: session.id }) });
@@ -131,7 +151,7 @@ export default function HomeTrainingPage() {
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       setHistory((current) => current.filter((item) => item.id !== data.undoneResultId));
       setRunning(true);
-      setMessage("Letzte Aufnahme wurde rückgängig gemacht. Punktestand und Ziel wurden wiederhergestellt.");
+      setMessage("Letzte Aufnahme wurde zurückgenommen.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Rückgängig fehlgeschlagen."); }
     finally { setSaving(false); }
   }
@@ -143,42 +163,76 @@ export default function HomeTrainingPage() {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "visit", sessionId: session.id, value }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
-      setSession(data.session); setHistory((current) => [...current, data.result]);
+      setSession(data.session);
+      setHistory((current) => [...current, data.result]);
       if (data.summary) setSummary(data.summary);
       const stored = readState(data.state);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
-      if (data.completed) { setRunning(false); setMessage("Heimtraining vollständig abgeschlossen. Alle Ergebnisse wurden gespeichert."); }
-      else if (data.exerciseCompleted) setMessage("Übung abgeschlossen. Die Auswertung ist bereit.");
-      else setMessage(`Aufnahme gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
+      if (data.completed) { setRunning(false); setMessage("Heimtraining vollständig abgeschlossen."); }
+      else if (data.exerciseCompleted) setMessage("Übung abgeschlossen. Deine Auswertung ist bereit.");
+      else setMessage(`Gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
     finally { setSaving(false); }
   }
 
+  if (focusActive && activePlan && session && currentExercise && exerciseState) {
+    return (
+      <div className="training-focus-overlay">
+        <main className="training-focus-shell">
+          <header className="training-focus-top">
+            <div className="training-focus-brand"><i /><div><small>{selectedPlayer?.displayName ?? "Heimtraining"} · Übung {exerciseIndex + 1} von {planItems.length}</small><strong>VDC Heimtraining</strong></div></div>
+            <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
+          </header>
+
+          {summary ? <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} /> : (
+            <section className="training-focus-card">
+              <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
+              <div className="eyebrow">Aktuelle Übung</div>
+              <h1>{currentExercise.name}</h1>
+              <p>{currentExercise.description}</p>
+
+              <div className="training-focus-player">
+                <div><small>Aufnahme</small><strong>{exerciseState.visit}</strong></div>
+                <span>{exerciseState.target ? `Ziel ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand ${exerciseState.score}` : ""}</span>
+              </div>
+
+              <div className="training-focus-meta">
+                <div><small>Trainingsziel</small><strong>{activePlan.goal}</strong></div>
+                <div><small>Dauer</small><strong>{activePlan.durationMin} Min.</strong></div>
+                <div><small>Gespeichert</small><strong>{history.length} Aufnahmen</strong></div>
+              </div>
+
+              {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
+
+              <div className="training-focus-actions">
+                {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+                <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
+                <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
+              </div>
+
+              {history.length > 0 && <div className="training-focus-history club-list">{history.filter((item) => item.exerciseId === currentExercise.id).slice(-4).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
+              {message && <p className="form-message">{message}</p>}
+            </section>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <main className="dashboard-page">
-      <section className="dashboard-heading"><div><div className="eyebrow">Spielerbereich</div><h1>Heimtraining</h1><p>Jede Aufnahme und dein kompletter Fortschritt werden dauerhaft in Supabase gespeichert.</p></div></section>
-      <section className="card admin-form" style={{ marginBottom: 24 }}><label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setSummary(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label></section>
-      {summary && <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} />}
+      <section className="dashboard-heading"><div><div className="eyebrow">Spielerbereich</div><h1>Heimtraining</h1><p>Dein Trainingsplan, deine Aufnahmen und dein Fortschritt werden direkt aus der Datenbank geladen.</p></div></section>
 
-      {activePlan && session && currentExercise && exerciseState ? (
-        <section className="result-panel">
-          <div className="exercise-progress"><div><span>Übung {exerciseIndex + 1} von {planItems.length}</span><strong>{Math.round((exerciseIndex / Math.max(planItems.length, 1)) * 100)}%</strong></div><div className="progress-track"><span style={{ width: `${Math.round((exerciseIndex / Math.max(planItems.length, 1)) * 100)}%` }} /></div></div>
-          <div className="eyebrow">{session.status === "PAUSED" ? "Training pausiert" : "Aktuelle Übung"}</div><h2>{currentExercise.name}</h2><p>{currentExercise.description}</p>
-          <div className="current-player"><small>Aufnahme</small><strong>{exerciseState.visit}</strong><span>{exerciseState.target ? `Ziel: ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand: ${exerciseState.score}` : ""}</span></div>
-          {running && !summary && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
-          <div className="actions">
-            {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
-            <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
-            <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
-          </div>
-          {history.length > 0 && <div className="club-list" style={{ marginTop: 20 }}>{history.filter((item) => item.exerciseId === currentExercise.id).slice(-5).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small style={{ display: "block" }}>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
-        </section>
-      ) : (
-        <>
-          <section className="section-block"><div className="section-heading"><div><span className="eyebrow">Meine Pläne</span><h2>{plans.length} verfügbar</h2></div></div><div className="saved-plan-grid">{plans.map((plan) => <article className="saved-plan-card" key={plan.id}><span className="status">{plan.goal}</span><h3>{plan.title}</h3><p>{plan.durationMin} Minuten · {readItems(plan.planJson).length} Übungen</p><button className="button full" disabled={saving} onClick={() => void startPlan(plan)}>Training starten</button></article>)}</div></section>
-          {plans.length === 0 && <section className="card admin-form"><div className="section-heading"><div><span className="eyebrow">Kein Plan vorhanden</span><h2>Eigenen Plan erstellen</h2></div></div><label>Ziel<select value={goal} onChange={(event) => setGoal(event.target.value)}>{goals.map((item) => <option key={item}>{item}</option>)}</select></label><label>Dauer<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>{[30,45,60,75,90].map((item) => <option key={item} value={item}>{item} Minuten</option>)}</select></label><button className="button" onClick={createOwnPlan}>Plan erstellen lassen</button></section>}
-        </>
-      )}
+      <section className="club-panel admin-form" style={{ marginBottom: 24 }}>
+        <label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setSummary(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label>
+      </section>
+
+      <section className="section-block">
+        <div className="section-heading"><div><span className="eyebrow">Meine Pläne</span><h2>{plans.length} verfügbar</h2></div></div>
+        <div className="saved-plan-grid">{plans.map((plan) => <article className="saved-plan-card" key={plan.id}><span className="status">{plan.goal}</span><h3>{plan.title}</h3><p>{plan.durationMin} Minuten · {readItems(plan.planJson).length} Übungen</p><button className="button full" disabled={saving} onClick={() => void startPlan(plan)}>Training starten</button></article>)}</div>
+      </section>
+
+      {plans.length === 0 && <section className="club-panel admin-form"><div className="section-heading"><div><span className="eyebrow">Kein Plan vorhanden</span><h2>Eigenen Plan erstellen</h2></div></div><label>Ziel<select value={goal} onChange={(event) => setGoal(event.target.value)}>{goals.map((item) => <option key={item}>{item}</option>)}</select></label><label>Dauer<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>{[30,45,60,75,90].map((item) => <option key={item} value={item}>{item} Minuten</option>)}</select></label><button className="button" onClick={createOwnPlan}>Plan erstellen lassen</button></section>}
       {message && <p className="form-message" style={{ marginTop: 18 }}>{message}</p>}
     </main>
   );
