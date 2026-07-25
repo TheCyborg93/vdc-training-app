@@ -29,7 +29,7 @@ function readProgress(value: unknown): Progress | null {
 function stateSummary(state?: ExerciseState) {
   if (!state) return "Noch nicht gestartet";
   if (state.completed) return "Übung abgeschlossen";
-  const parts = [];
+  const parts: string[] = [];
   if (state.target) parts.push(`Ziel ${state.target}`);
   if (state.score !== undefined) parts.push(`Stand ${state.score}`);
   parts.push(`Aufnahme ${state.visit ?? 1}`);
@@ -44,19 +44,30 @@ export default function LiveTrainingPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
-  async function loadTraining() {
-    const response = await fetch("/api/training/current", { cache: "no-store" });
+  async function loadTraining(signal?: AbortSignal) {
+    const response = await fetch("/api/training/current", { cache: "no-store", signal });
     const data = await response.json();
     if (!response.ok) { setMessage(data.error ?? "Training konnte nicht geladen werden."); return; }
     setTraining(data);
-    if (data?.assignments?.length && boardId === null) setBoardId(data.assignments[0].boardId);
+    setBoardId((current) => current ?? data?.assignments?.[0]?.boardId ?? null);
   }
 
   useEffect(() => {
-    void loadTraining();
-    const timer = window.setInterval(() => void loadTraining(), 5000);
-    return () => window.clearInterval(timer);
-  }, []);
+    const controller = new AbortController();
+    void loadTraining(controller.signal);
+
+    const refresh = () => {
+      if (document.visibilityState === "visible" && !saving) void loadTraining();
+    };
+    const timer = window.setInterval(refresh, 12000);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [saving]);
 
   const boards = useMemo(() => {
     if (!training) return [];
@@ -70,9 +81,11 @@ export default function LiveTrainingPage() {
   const progress = readProgress(session?.randomOrderJson);
   const orderedPlayers = progress ? progress.order.map((id) => boardPlayers.find((item) => item.player.id === id)?.player).filter((item): item is Player => Boolean(item)) : boardPlayers.map((item) => item.player);
   const currentPlayer = progress ? orderedPlayers[progress.playerIndex] : null;
+  const nextPlayer = progress && orderedPlayers.length > 1 ? orderedPlayers[(progress.playerIndex + 1) % orderedPlayers.length] : null;
   const currentPlanExercise = progress ? training?.trainingPlan.exercises[progress.exerciseIndex] : null;
   const currentExerciseState = currentPlayer && progress?.playerStates ? progress.playerStates[String(currentPlayer.id)] ?? null : null;
-  const progressPercent = progress && training ? Math.round((progress.exerciseIndex / Math.max(training.trainingPlan.exercises.length, 1)) * 100) : 0;
+  const progressPercent = progress && training ? Math.round(((progress.exerciseIndex + 1) / Math.max(training.trainingPlan.exercises.length, 1)) * 100) : 0;
+  const focusActive = Boolean(session && (session.status === "RUNNING" || session.status === "PAUSED") && currentPlanExercise && currentPlayer && progress);
 
   async function startTraining() {
     if (!training || !boardId) return;
@@ -82,7 +95,6 @@ export default function LiveTrainingPage() {
       const response = await fetch("/api/training/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trainingDayId: training.id, boardId }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Start fehlgeschlagen.");
-      setMessage("Training gestartet. Die Spielerreihenfolge wurde zufällig festgelegt.");
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
     finally { setStarting(false); }
@@ -90,13 +102,13 @@ export default function LiveTrainingPage() {
 
   async function undoLastResult() {
     if (!session) return;
-    if (!window.confirm("Die letzte Aufnahme an diesem Board wirklich rückgängig machen? Spieler, Ziel und Punktestand werden zurückgesetzt.")) return;
+    if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen?")) return;
     setSaving(true); setMessage(""); setSummary(null);
     try {
       const response = await fetch("/api/training/result", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", boardSessionId: session.id }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht rückgängig gemacht werden.");
-      setMessage("Letzte Aufnahme wurde rückgängig gemacht. Der vorherige Spieler und Übungsstand wurden wiederhergestellt.");
+      setMessage("Letzte Aufnahme wurde zurückgenommen.");
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Rückgängig fehlgeschlagen."); }
     finally { setSaving(false); }
@@ -111,10 +123,10 @@ export default function LiveTrainingPage() {
       if (!response.ok) throw new Error(data.error ?? "Aufnahme konnte nicht gespeichert werden.");
       if (data.summary) setSummary(data.summary);
       if (data.completed) setMessage("Training an diesem Board abgeschlossen.");
-      else if (data.exerciseCompleted) setMessage("Alle Spieler sind fertig. Die nächste Übung startet mit neuer zufälliger Reihenfolge.");
+      else if (data.exerciseCompleted) setMessage("Nächste Übung startet mit einer neuen Reihenfolge.");
       else {
-        const nextPlayer = orderedPlayers.find((player) => player.id === data.nextPlayerId);
-        setMessage(data.playerFinished ? `Übung für diesen Spieler abgeschlossen. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.` : `Aufnahme gespeichert. Jetzt ist ${nextPlayer?.displayName ?? "der nächste Spieler"} dran.`);
+        const following = orderedPlayers.find((player) => player.id === data.nextPlayerId);
+        setMessage(`Gespeichert. Jetzt ist ${following?.displayName ?? "der nächste Spieler"} dran.`);
       }
       await loadTraining();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
@@ -123,22 +135,59 @@ export default function LiveTrainingPage() {
 
   if (!training) return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Trainingstag</h1><p>{message || "Aktuell ist kein Training veröffentlicht."}</p></section></main>;
 
+  if (focusActive && currentPlanExercise && currentPlayer && progress && session) {
+    return (
+      <div className="training-focus-overlay">
+        <main className="training-focus-shell">
+          <header className="training-focus-top">
+            <div className="training-focus-brand"><i /><div><small>{session.board.name} · Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</small><strong>VDC Trainingstag</strong></div></div>
+            <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
+          </header>
+
+          {summary ? <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} /> : (
+            <section className="training-focus-card">
+              <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
+              <div className="eyebrow">Aktuelle Übung</div>
+              <h1>{currentPlanExercise.exercise.name}</h1>
+              <p>{currentPlanExercise.exercise.description}</p>
+
+              <div className="training-focus-player">
+                <div><small>Jetzt am Zug</small><strong>{currentPlayer.displayName}</strong></div>
+                <span>{stateSummary(currentExerciseState ?? undefined)}</span>
+              </div>
+
+              <div className="training-focus-meta">
+                <div><small>Board</small><strong>{session.board.name}</strong></div>
+                <div><small>Danach</small><strong>{nextPlayer?.displayName ?? "–"}</strong></div>
+                <div><small>Reihenfolge</small><strong>{progress.playerIndex + 1} / {orderedPlayers.length}</strong></div>
+              </div>
+
+              {session.status === "RUNNING" && <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />}
+
+              <div className="training-focus-actions">
+                <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>
+              </div>
+              {message && <p className="form-message">{message}</p>}
+            </section>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <main className={`${styles.root} dashboard-page`}>
-      <section className="dashboard-heading"><div><div className="eyebrow">Live-Training</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div><span className="status">{training.status === "RUNNING" ? "Läuft" : training.status === "COMPLETED" ? "Beendet" : "Veröffentlicht"}</span></section>
-      {summary && <ExerciseSummaryCard summary={summary} onClose={() => setSummary(null)} />}
+      <section className="dashboard-heading"><div><div className="eyebrow">Trainingstag</div><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p></div><span className="status">{training.status === "RUNNING" ? "Läuft" : training.status === "COMPLETED" ? "Beendet" : "Bereit"}</span></section>
       <section className="live-training-layout">
-        <aside className="card admin-form"><label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => { setBoardId(Number(event.target.value)); setSummary(null); }}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label><div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div><button className="button" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : session?.status === "RUNNING" ? "Training läuft" : starting ? "Startet …" : "Training starten"}</button>{session?.status === "RUNNING" && <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button>}{message && <p className="form-message">{message}</p>}</aside>
-        <section>
-          <div className="section-heading"><div><span className="eyebrow">Zufällige Reihenfolge</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
-          <div className="live-player-list">{orderedPlayers.map((player, index) => {
-            const state = progress?.playerStates?.[String(player.id)];
-            const isCurrent = currentPlayer?.id === player.id;
-            return <article className={`live-player-card ${isCurrent ? "is-current" : ""} ${state?.completed ? "is-finished" : ""}`} key={player.id}><span>{index + 1}</span><strong>{player.displayName}</strong><small>{isCurrent ? "Jetzt am Zug" : state?.completed ? "Fertig" : "Wartet"}</small><p>{stateSummary(state)}</p></article>;
-          })}</div>
-          {session?.status === "RUNNING" && currentPlanExercise && currentPlayer && progress && !summary && <section className="result-panel"><div className="exercise-progress"><div><span>Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div><div className="eyebrow">Jetzt am Zug</div><h2>{currentPlayer.displayName}</h2><div className="current-player"><small>Aktuelle Übung</small><strong>{currentPlanExercise.exercise.name}</strong><span>{stateSummary(currentExerciseState ?? undefined)}</span></div><p>{currentPlanExercise.exercise.description}</p><ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} /></section>}
-          <div className="section-heading live-exercise-heading"><div><span className="eyebrow">Trainingsablauf</span><h2>{training.trainingPlan.exercises.length} Übungen</h2></div></div>
-          <div className="plan-item-list">{training.trainingPlan.exercises.map((item, index) => <article className={`plan-item ${progress?.exerciseIndex === index ? "is-active-exercise" : ""}`} key={item.id}><span className="drag-handle">{index + 1}</span><div><strong>{item.exercise.name}</strong><p>{item.exercise.description}</p></div><span>{item.durationMin} Min.</span></article>)}</div>
+        <aside className="card admin-form">
+          <label>Board bestätigen<select value={boardId ?? ""} onChange={(event) => { setBoardId(Number(event.target.value)); setSummary(null); }}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></label>
+          <div className="board-confirmation"><small>Ausgewähltes Board</small><strong>{boards.find((board) => board.id === boardId)?.name}</strong><span>{boardPlayers.length} Spieler eingeteilt</span></div>
+          <button className="button full" disabled={starting || session?.status === "RUNNING" || session?.status === "COMPLETED"} onClick={startTraining}>{session?.status === "COMPLETED" ? "Training beendet" : starting ? "Startet …" : "Training starten"}</button>
+          {message && <p className="form-message">{message}</p>}
+        </aside>
+        <section className="club-panel">
+          <div className="section-heading"><div><span className="eyebrow">Board-Zuteilung</span><h2>{boards.find((board) => board.id === boardId)?.name}</h2></div></div>
+          <div className="live-player-list">{boardPlayers.map((item, index) => <article className="live-player-card" key={item.player.id}><span>{index + 1}</span><strong>{item.player.displayName}</strong><small>Bereit</small></article>)}</div>
         </section>
       </section>
     </main>
