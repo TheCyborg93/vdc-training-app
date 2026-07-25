@@ -7,6 +7,7 @@ import "./login-nav.css";
 import "./vdc-premium.css";
 import "./training-report.css";
 import "./vdc-responsive.css";
+import "./training-result-grid.css";
 
 export const metadata: Metadata = {
   title: "VDC Training",
