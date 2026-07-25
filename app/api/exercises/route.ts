@@ -1,6 +1,7 @@
 import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { ensureDefaultExercises } from "@/lib/default-exercises";
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -20,15 +21,16 @@ function completionValue(value: unknown) {
 
 export async function GET() {
   try {
+    const added = await ensureDefaultExercises(prisma);
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
         orderBy: [{ favorite: "desc" }, { active: "desc" }, { name: "asc" }],
-        include: { categories: { include: { category: true } } }
+        include: { categories: { include: { category: true } } },
       }),
-      prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } })
+      prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } }),
     ]);
 
-    return NextResponse.json({ exercises, categories });
+    return NextResponse.json({ exercises, categories, catalogAdded: added });
   } catch (error) {
     console.error("Exercise GET failed", error);
     return NextResponse.json({ error: "Übungen konnten nicht geladen werden." }, { status: 500 });
@@ -78,13 +80,13 @@ export async function POST(request: Request) {
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
-          active: true
-        }
+          active: true,
+        },
       });
 
       for (const categoryName of categoryNames) {
         const category = await tx.exerciseCategory.upsert({
-          where: { name: categoryName }, update: {}, create: { name: categoryName }
+          where: { name: categoryName }, update: {}, create: { name: categoryName },
         });
         await tx.exerciseCategoryLink.create({ data: { exerciseId: created.id, categoryId: category.id } });
       }
