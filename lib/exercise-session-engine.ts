@@ -74,7 +74,7 @@ export function createInitialExerciseState(exercise: ExerciseDefinition): Player
   if (kind.startsWith("AROUND_")) return { kind, visit: 1, completed: false, targetIndex: 0, target: kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1", dartsThrown: 0, hits: 0, ...config };
   if (kind === "SHANGHAI") return { kind, visit: 1, completed: false, targetIndex: 0, target: "1", score: 0, dartsThrown: 0, ...config };
   if (kind === "JDC_CHALLENGE") return { kind, visit: 1, completed: false, targetIndex: 0, target: "10", score: 0, dartsThrown: 0, ...config };
-  if (kind === "GAME_121") return { kind, visit: 1, completed: false, score: 121, target: "121", baseTarget: 121, attemptDarts: 0, dartsThrown: 0, attempts: 0, successes: 0, highestTarget: 121, firstVisitFinishes: 0, ...config };
+  if (kind === "GAME_121") return { kind, visit: 1, completed: false, score: 121, target: "121", baseTarget: 121, attemptDarts: 0, dartsThrown: 0, attempts: 0, successes: 0, highestTarget: 121, firstVisitFinishes: 0, ...config, completionMode: "ENGINE_DEFAULT", completionValue: undefined };
   if (kind === "X01") return { kind, visit: 1, completed: false, score: text(exercise).includes("301") ? 301 : 501, dartsThrown: 0, ...config };
   return { kind, visit: 1, completed: false, score: 0, dartsThrown: 0, hits: 0, attempts: 0, successes: 0, ...config };
 }
