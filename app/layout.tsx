@@ -5,6 +5,7 @@ import "./steel-ui.css";
 import "./club-ui.css";
 import "./login-nav.css";
 import "./vdc-premium.css";
+import "./training-report.css";
 
 export const metadata: Metadata = {
   title: "VDC Training",
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="de">
+    <html lang="de">">
       <body>
         <AppShell>{children}</AppShell>
       </body>
