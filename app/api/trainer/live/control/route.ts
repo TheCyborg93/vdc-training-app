@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
 import { prisma } from "@/lib/prisma";
 import { createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
 
@@ -44,6 +45,11 @@ function nextActiveIndex(progress: ProgressState): number {
 
 export async function POST(request: Request) {
   try {
+    const trainer = await getAuthenticatedTrainer();
+    if (!trainer) {
+      return NextResponse.json({ error: "Keine Berechtigung für diese Traineraktion." }, { status: 403 });
+    }
+
     const body = await request.json();
     const boardSessionId = Number(body.boardSessionId);
     const action = String(body.action ?? "");
