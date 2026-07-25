@@ -25,16 +25,6 @@ function readProgress(value: unknown): Progress | null {
   return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
 }
 
-function stateSummary(state?: ExerciseState) {
-  if (!state) return "Noch nicht gestartet";
-  if (state.completed) return "Übung abgeschlossen";
-  const parts: string[] = [];
-  if (state.target) parts.push(`Ziel ${state.target}`);
-  if (state.score !== undefined) parts.push(`Stand ${state.score}`);
-  parts.push(`Aufnahme ${state.visit ?? 1}`);
-  return parts.join(" · ");
-}
-
 export default function LiveTrainingPage() {
   const [training, setTraining] = useState<TrainingDay | null>(null);
   const [boardId, setBoardId] = useState<number | null>(null);
@@ -140,26 +130,58 @@ export default function LiveTrainingPage() {
 
   if (focusActive && currentPlanExercise && currentPlayer && progress && session) {
     return (
-      <div className="training-focus-overlay">
-        <main className="training-focus-shell">
-          <header className="training-focus-top">
-            <div className="training-focus-brand"><i /><div><small>{session.board.name} · Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</small><strong>VDC Trainingstag</strong></div></div>
-            <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
-          </header>
-          <section className="training-focus-card">
-            <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
-            <div className="eyebrow">Aktuelle Übung</div>
-            <h1>{currentPlanExercise.exercise.name}</h1>
-            <p>{currentPlanExercise.exercise.description}</p>
-            <div className="training-focus-player"><div><small>Jetzt am Zug</small><strong>{currentPlayer.displayName}</strong></div><span>{stateSummary(currentExerciseState ?? undefined)}</span></div>
-            <div className="training-focus-meta">
-              <div><small>Board</small><strong>{session.board.name}</strong></div>
-              <div><small>Danach</small><strong>{nextPlayer?.displayName ?? "–"}</strong></div>
-              <div><small>Reihenfolge</small><strong>{progress.playerIndex + 1} / {orderedPlayers.length}</strong></div>
+      <div className="training-focus-overlay result-grid-overlay">
+        <main className="training-result-shell">
+          <header className="training-result-header">
+            <div>
+              <small>{session.board.name} · Übung {progress.exerciseIndex + 1} von {training.trainingPlan.exercises.length}</small>
+              <strong>{currentPlanExercise.exercise.name}</strong>
             </div>
-            {session.status === "RUNNING" && <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />}
-            <div className="training-focus-actions"><button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig</button></div>
-            {message && <p className="form-message">{message}</p>}
+            <span>{progressPercent}%</span>
+          </header>
+
+          <section className="training-result-grid">
+            <article className="result-grid-score">
+              <small>Aktueller Punktestand</small>
+              <strong>{currentExerciseState?.score ?? "–"}</strong>
+              <span>Aufnahme {currentExerciseState?.visit ?? 1}</span>
+            </article>
+
+            <article className="result-grid-target">
+              <small>Aktuelles Ziel</small>
+              <strong>{currentExerciseState?.target ?? currentPlanExercise.exercise.name}</strong>
+              <span>{currentExerciseState?.dartsThrown ?? 0} Darts gespielt</span>
+            </article>
+
+            <article className="result-grid-player">
+              <small>Wer ist dran?</small>
+              <strong>{currentPlayer.displayName}</strong>
+              <span>Danach: {nextPlayer?.displayName ?? "–"}</span>
+            </article>
+
+            <article className="result-grid-free">
+              <div>
+                <small>Übung</small>
+                <strong>{currentPlanExercise.exercise.name}</strong>
+                <p>{currentPlanExercise.exercise.description}</p>
+              </div>
+              <div className="result-grid-progress">
+                <span style={{ width: `${progressPercent}%` }} />
+              </div>
+            </article>
+
+            <section className="result-grid-engine">
+              {session.status === "RUNNING" ? (
+                <ExerciseResultInput resultType={currentPlanExercise.exercise.resultType} exerciseName={currentPlanExercise.exercise.name} state={currentExerciseState} disabled={saving} onSubmit={saveResult} />
+              ) : (
+                <div className="result-grid-paused"><strong>Training pausiert</strong><span>Die Eingabe ist aktuell gesperrt.</span></div>
+              )}
+            </section>
+
+            <footer className="result-grid-undo">
+              <button className="button secondary" disabled={saving} onClick={() => void undoLastResult()}>Letzte Aufnahme rückgängig machen</button>
+              {message && <p className="form-message">{message}</p>}
+            </footer>
           </section>
         </main>
       </div>
