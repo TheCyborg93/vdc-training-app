@@ -14,6 +14,10 @@ type ExerciseState = {
   deadlineAt?: number;
   completionMode?: string;
   completionValue?: number;
+  baseTarget?: number;
+  attemptDarts?: number;
+  highestTarget?: number;
+  successes?: number;
 };
 
 type Props = {
@@ -43,6 +47,7 @@ export default function ExerciseResultInput({ resultType, exerciseName, completi
   const [double, setDouble] = useState("0");
   const [triple, setTriple] = useState("0");
   const [checkout, setCheckout] = useState(false);
+  const [dartsUsed, setDartsUsed] = useState(3);
   const [now, setNow] = useState(() => Date.now());
   const timeoutSent = useRef(false);
   const kind = state?.kind ?? "CUSTOM";
@@ -74,6 +79,7 @@ export default function ExerciseResultInput({ resultType, exerciseName, completi
     await onSubmit({ score: value, ...extra });
     setScore("");
     setCheckout(false);
+    setDartsUsed(3);
   }
 
   const usedVisits = Math.max(0, (state?.visit ?? 1) - 1);
@@ -87,6 +93,31 @@ export default function ExerciseResultInput({ resultType, exerciseName, completi
       <div className="progress-track"><span style={{ width: `${completionMode === "TIME_LIMIT" ? Math.max(0, Math.min(100, ((remainingSeconds ?? completionValue * 60) / (completionValue * 60)) * 100)) : limitPercent}%` }} /></div>
     </div>
   ) : null;
+
+  if (kind === "GAME_121") {
+    const attemptDarts = state?.attemptDarts ?? 0;
+    const dartsRemaining = Math.max(0, 9 - attemptDarts);
+    return (
+      <div className="visit-entry game121-entry">
+        <div className="game121-status">
+          <div><small>Restscore</small><strong>{state?.score ?? state?.target ?? 121}</strong></div>
+          <div><small>Versuch</small><strong>{attemptDarts} / 9</strong><span>{dartsRemaining} Darts übrig</span></div>
+          <div><small>Basiswert</small><strong>{state?.baseTarget ?? 121}</strong><span>Rückfall bei Fehlversuch</span></div>
+        </div>
+        <div className="numeric-result"><input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Score dieser Aufnahme" /></div>
+        <div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 121, 140, 180].map((value) => <button type="button" disabled={disabled} key={value} onClick={() => setScore(String(value))}>{value}</button>)}</div>
+        <div className="game121-checkout-row">
+          <button type="button" className={!checkout ? "is-active" : ""} disabled={disabled} onClick={() => setCheckout(false)}>Kein Checkout</button>
+          <button type="button" className={checkout ? "is-active success" : ""} disabled={disabled} onClick={() => setCheckout(true)}>Checkout geschafft</button>
+        </div>
+        <div className="game121-darts">
+          <small>Verwendete Darts in dieser Aufnahme</small>
+          <div>{[1, 2, 3].map((value) => <button type="button" className={dartsUsed === value ? "is-active" : ""} disabled={disabled || value > dartsRemaining} key={value} onClick={() => setDartsUsed(value)}>{value}</button>)}</div>
+        </div>
+        <button className="button full" disabled={disabled || score === "" || dartsRemaining === 0} onClick={() => void submitScore({ checkout, dartsUsed })}>Aufnahme speichern</button>
+      </div>
+    );
+  }
 
   if (kind === "BOB27" || kind.startsWith("AROUND_") || kind === "DOUBLES_ROUNDS" || kind === "BULL_ROUNDS" || kind === "HIT_ROUNDS") {
     const currentScore = state?.score ?? 27;
