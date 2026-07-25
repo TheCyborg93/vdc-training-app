@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
-import { createExerciseSummary } from "@/lib/exercise-summary";
+import { buildTrainingReport } from "@/lib/training-report";
 
 function shuffle<T>(items: T[]): T[] {
   const result = [...items];
@@ -100,7 +100,11 @@ export async function POST(request: Request) {
     if (session.status !== "RUNNING") return NextResponse.json({ error: "Diese Board-Sitzung läuft aktuell nicht." }, { status: 409 });
     if (!body.value || typeof body.value !== "object") return NextResponse.json({ error: "Eine Aufnahme ist erforderlich." }, { status: 400 });
 
-    const assignments = await prisma.boardAssignment.findMany({ where: { trainingDayId: session.trainingDayId, boardId: session.boardId }, orderBy: { position: "asc" } });
+    const assignments = await prisma.boardAssignment.findMany({
+      where: { trainingDayId: session.trainingDayId, boardId: session.boardId },
+      orderBy: { position: "asc" },
+      include: { player: { select: { id: true, displayName: true } } },
+    });
     const progress = readProgress(session.randomOrderJson);
     if (!progress) return NextResponse.json({ error: "Der Trainingsfortschritt ist ungültig." }, { status: 409 });
 
@@ -148,6 +152,7 @@ export async function POST(request: Request) {
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
     const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
     const storedValue = { ...applied.visitValue, progressBefore: progress } as Prisma.InputJsonValue;
+    const completedAt = completed ? new Date() : null;
 
     await prisma.$transaction(async (tx) => {
       await tx.exerciseResult.create({
@@ -164,7 +169,7 @@ export async function POST(request: Request) {
       await tx.boardSession.update({
         where: { id: session.id },
         data: completed
-          ? { status: "COMPLETED", completedAt: new Date(), currentExerciseId: null, randomOrderJson: nextProgress }
+          ? { status: "COMPLETED", completedAt, currentExerciseId: null, randomOrderJson: nextProgress }
           : { currentExerciseId: nextExercise?.exerciseId ?? currentPlanExercise.exerciseId, randomOrderJson: nextProgress },
       });
       if (completed) {
@@ -173,18 +178,20 @@ export async function POST(request: Request) {
       }
     });
 
-    let summary = null;
-    if (applied.playerFinished) {
-      const playerResults = await prisma.exerciseResult.findMany({
-        where: { boardSessionId: session.id, exerciseId: currentPlanExercise.exerciseId, playerId: currentPlayerId, deletedAt: null },
+    let report = null;
+    if (completed) {
+      const allResults = await prisma.exerciseResult.findMany({
+        where: { boardSessionId: session.id, deletedAt: null },
         orderBy: { createdAt: "asc" },
-        select: { roundNumber: true, calculatedScore: true, valueJson: true },
+        select: { exerciseId: true, playerId: true, roundNumber: true, calculatedScore: true, valueJson: true },
       });
-      const player = await prisma.player.findUnique({ where: { id: currentPlayerId }, select: { displayName: true } });
-      summary = {
-        playerName: player?.displayName ?? "Spieler",
-        ...createExerciseSummary(currentPlanExercise.exercise.name, applied.nextState.kind, playerResults, applied.nextState),
-      };
+      report = buildTrainingReport({
+        title: session.trainingDay.trainingPlan.title,
+        completedAt,
+        exercises: planExercises.map((item) => ({ exercise: item.exercise, position: item.position })),
+        players: assignments.map((item) => item.player),
+        results: allResults,
+      });
     }
 
     return NextResponse.json({
@@ -194,7 +201,7 @@ export async function POST(request: Request) {
       nextPlayerId,
       nextProgress,
       state: applied.nextState,
-      summary,
+      report,
     });
   } catch (error) {
     console.error("Training result POST failed", error);
