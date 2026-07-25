@@ -2,7 +2,7 @@ import { HomeSessionStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
-import { createExerciseSummary } from "@/lib/exercise-summary";
+import { buildTrainingReport } from "@/lib/training-report";
 
 type PlanItem = { exerciseId: number; durationMin: number; position?: number };
 type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState };
@@ -27,7 +27,29 @@ async function loadPlan(planId: number) {
   const items = readItems(plan.planJson);
   const exercises = await prisma.exercise.findMany({ where: { id: { in: items.map((item) => Number(item.exerciseId)) } } });
   const map = new Map(exercises.map((exercise) => [exercise.id, exercise]));
-  return { plan, items, exercises: items.map((item) => map.get(Number(item.exerciseId))).filter(Boolean) };
+  return { plan, items, exercises: items.map((item) => map.get(Number(item.exerciseId))).filter((item): item is NonNullable<typeof item> => Boolean(item)) };
+}
+
+async function createReport(sessionId: number, completedAt?: Date | null) {
+  const session = await prisma.homeTrainingSession.findUnique({
+    where: { id: sessionId },
+    include: { plan: true, player: { select: { id: true, displayName: true } } },
+  });
+  if (!session) return null;
+  const loaded = await loadPlan(session.homeTrainingPlanId);
+  if (!loaded) return null;
+  const results = await prisma.homeExerciseResult.findMany({
+    where: { homeTrainingSessionId: sessionId, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { exerciseId: true, playerId: true, roundNumber: true, calculatedScore: true, valueJson: true },
+  });
+  return buildTrainingReport({
+    title: session.plan.title,
+    completedAt: completedAt ?? session.completedAt,
+    exercises: loaded.exercises.map((exercise, index) => ({ exercise, position: loaded.items[index]?.position ?? index })),
+    players: [session.player],
+    results,
+  });
 }
 
 export async function POST(request: Request) {
@@ -114,8 +136,10 @@ export async function POST(request: Request) {
 
     if (action === "cancel" || action === "finish") {
       const status = action === "cancel" ? HomeSessionStatus.CANCELLED : HomeSessionStatus.COMPLETED;
-      const updated = await prisma.homeTrainingSession.update({ where: { id: sessionId }, data: { status, completedAt: new Date() } });
-      return NextResponse.json({ session: updated, completed: status === HomeSessionStatus.COMPLETED });
+      const completedAt = new Date();
+      const updated = await prisma.homeTrainingSession.update({ where: { id: sessionId }, data: { status, completedAt } });
+      const report = status === HomeSessionStatus.COMPLETED ? await createReport(sessionId, completedAt) : null;
+      return NextResponse.json({ session: updated, completed: status === HomeSessionStatus.COMPLETED, report });
     }
 
     if (action !== "visit" || !body.value || typeof body.value !== "object") {
@@ -145,6 +169,7 @@ export async function POST(request: Request) {
     }
 
     const nextState: StoredState = { exerciseIndex: completed ? stored.exerciseIndex : nextExerciseIndex, exerciseState: nextExerciseState };
+    const completedAt = completed ? new Date() : null;
     const result = await prisma.$transaction(async (tx) => {
       const created = await tx.homeExerciseResult.create({
         data: {
@@ -153,7 +178,7 @@ export async function POST(request: Request) {
           playerId: session.playerId,
           exerciseIndex: stored.exerciseIndex,
           roundNumber: stored.exerciseState.visit,
-          valueJson: applied.visitValue as Prisma.InputJsonValue,
+          valueJson: { ...applied.visitValue, stateBefore: stored.exerciseState } as Prisma.InputJsonValue,
           calculatedScore: applied.calculatedScore,
           audits: { create: { action: "CREATED", afterJson: applied.visitValue as Prisma.InputJsonValue } },
         },
@@ -161,23 +186,14 @@ export async function POST(request: Request) {
       const updated = await tx.homeTrainingSession.update({
         where: { id: session.id },
         data: completed
-          ? { status: HomeSessionStatus.COMPLETED, completedAt: new Date(), stateJson: nextState as Prisma.InputJsonValue }
+          ? { status: HomeSessionStatus.COMPLETED, completedAt, stateJson: nextState as Prisma.InputJsonValue }
           : { exerciseIndex: nextExerciseIndex, stateJson: nextState as Prisma.InputJsonValue },
       });
       return { created, updated };
     });
 
-    let summary = null;
-    if (exerciseCompleted) {
-      const exerciseResults = await prisma.homeExerciseResult.findMany({
-        where: { homeTrainingSessionId: session.id, exerciseId: currentExercise.id, exerciseIndex: stored.exerciseIndex, deletedAt: null },
-        orderBy: { createdAt: "asc" },
-        select: { roundNumber: true, calculatedScore: true, valueJson: true },
-      });
-      summary = createExerciseSummary(currentExercise.name, applied.nextState.kind, exerciseResults, applied.nextState);
-    }
-
-    return NextResponse.json({ result: result.created, session: result.updated, state: nextState, exerciseCompleted, completed, summary });
+    const report = completed ? await createReport(session.id, completedAt) : null;
+    return NextResponse.json({ result: result.created, session: result.updated, state: nextState, exerciseCompleted, completed, report });
   } catch (error) {
     console.error("Home training session POST failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Heimtraining konnte nicht gespeichert werden." }, { status: 500 });
