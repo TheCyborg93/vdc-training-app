@@ -6,6 +6,7 @@ import "./club-ui.css";
 import "./login-nav.css";
 import "./vdc-premium.css";
 import "./training-report.css";
+import "./vdc-responsive.css";
 
 export const metadata: Metadata = {
   title: "VDC Training",
