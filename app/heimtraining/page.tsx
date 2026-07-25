@@ -13,6 +13,8 @@ type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState }
 type SavedResult = { id: number; exerciseId: number; roundNumber: number; calculatedScore: number | null; exercise?: { name: string } };
 type Session = { id: number; homeTrainingPlanId: number; playerId: number; status: string; exerciseIndex: number; stateJson: unknown; plan?: Plan; results?: SavedResult[] };
 
+type LiveMetric = { label: string; value: string };
+
 const goals = ["Scoring", "Doppel", "Checkout", "Stellen", "Mental", "Konstanz", "Wurftechnik", "Matchtraining"];
 
 function readItems(value: unknown): PlanItem[] {
@@ -25,6 +27,59 @@ function readState(value: unknown): StoredState | null {
   const data = value as Record<string, unknown>;
   if (!Number.isInteger(Number(data.exerciseIndex)) || !data.exerciseState || typeof data.exerciseState !== "object" || Array.isArray(data.exerciseState)) return null;
   return { exerciseIndex: Number(data.exerciseIndex), exerciseState: data.exerciseState as PlayerExerciseState };
+}
+
+function liveMetrics(state: PlayerExerciseState, exerciseIndex: number, exerciseCount: number, historyCount: number): LiveMetric[] {
+  const data = state as PlayerExerciseState & { kind?: string; score?: number; visit?: number; dartsThrown?: number; hits?: number; target?: string; targetIndex?: number };
+  const kind = data.kind ?? "CUSTOM";
+  const visit = data.visit ?? 1;
+  const darts = data.dartsThrown ?? Math.max(0, visit - 1) * 3;
+
+  if (kind === "BOB27") {
+    return [
+      { label: "Doppel-Fortschritt", value: `${Math.min(21, (data.targetIndex ?? 0) + 1)} / 21` },
+      { label: "Aufnahme", value: String(visit) },
+      { label: "Darts", value: String(darts) },
+    ];
+  }
+
+  if (kind === "X01") {
+    return [
+      { label: "Restscore", value: String(data.score ?? 501) },
+      { label: "Aufnahme", value: String(visit) },
+      { label: "Darts", value: String(darts) },
+    ];
+  }
+
+  if (kind === "SCORING" || kind === "TIME_BASED") {
+    return [
+      { label: "Aufnahmen", value: String(Math.max(0, visit - 1)) },
+      { label: "Darts", value: String(darts) },
+      { label: "Gespeichert", value: String(historyCount) },
+    ];
+  }
+
+  if (kind.startsWith("AROUND_")) {
+    return [
+      { label: "Zielposition", value: String((data.targetIndex ?? 0) + 1) },
+      { label: "Aufnahme", value: String(visit) },
+      { label: "Darts", value: String(darts) },
+    ];
+  }
+
+  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") {
+    return [
+      { label: "Aktuelle Zahl", value: data.target ?? "–" },
+      { label: "Gesamtstand", value: String(data.score ?? 0) },
+      { label: "Aufnahme", value: String(visit) },
+    ];
+  }
+
+  return [
+    { label: "Übung", value: `${exerciseIndex + 1} / ${exerciseCount}` },
+    { label: "Aufnahme", value: String(visit) },
+    { label: "Darts", value: String(darts) },
+  ];
 }
 
 export default function HomeTrainingPage() {
@@ -189,32 +244,68 @@ export default function HomeTrainingPage() {
   }
 
   if (focusActive && activePlan && session && currentExercise && exerciseState) {
+    const metrics = liveMetrics(exerciseState, exerciseIndex, planItems.length, history.length);
+    const state = exerciseState as PlayerExerciseState & { score?: number; visit?: number; target?: string; dartsThrown?: number };
+
     return (
-      <div className="training-focus-overlay">
-        <main className="training-focus-shell">
-          <header className="training-focus-top">
-            <div className="training-focus-brand"><i /><div><small>{selectedPlayer?.displayName ?? "Heimtraining"} · Übung {exerciseIndex + 1} von {planItems.length}</small><strong>VDC Heimtraining</strong></div></div>
-            <span className="training-focus-status">{session.status === "PAUSED" ? "Pausiert" : "Training läuft"}</span>
+      <div className="training-focus-overlay result-grid-overlay">
+        <main className="training-result-shell">
+          <header className="training-result-header">
+            <div>
+              <small>Heimtraining · Übung {exerciseIndex + 1} von {planItems.length}</small>
+              <strong>{currentExercise.name}</strong>
+            </div>
+            <div className="competition-header-actions">
+              <span>{progressPercent}%</span>
+              <button disabled={saving} onClick={() => void sessionAction("finish")}>Beenden</button>
+            </div>
           </header>
-          <section className="training-focus-card">
-            <div className="exercise-progress"><div><span>Trainingsfortschritt</span><strong>{progressPercent}%</strong></div><div className="progress-track"><span style={{ width: `${progressPercent}%` }} /></div></div>
-            <div className="eyebrow">Aktuelle Übung</div>
-            <h1>{currentExercise.name}</h1>
-            <p>{currentExercise.description}</p>
-            <div className="training-focus-player"><div><small>Aufnahme</small><strong>{exerciseState.visit}</strong></div><span>{exerciseState.target ? `Ziel ${exerciseState.target}` : "Einzelaufnahme"}{exerciseState.score !== undefined ? ` · Stand ${exerciseState.score}` : ""}</span></div>
-            <div className="training-focus-meta">
-              <div><small>Trainingsziel</small><strong>{activePlan.goal}</strong></div>
-              <div><small>Dauer</small><strong>{activePlan.durationMin} Min.</strong></div>
-              <div><small>Gespeichert</small><strong>{history.length} Aufnahmen</strong></div>
-            </div>
-            {running && <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />}
-            <div className="training-focus-actions">
-              {running ? <button className="button secondary" disabled={saving} onClick={() => void sessionAction("pause")}>Pause & speichern</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+
+          <section className="training-result-grid">
+            <article className="result-grid-score">
+              <small>Aktueller Punktestand</small>
+              <strong>{state.score ?? "–"}</strong>
+              <span>Aufnahme {state.visit ?? 1}</span>
+            </article>
+
+            <article className="result-grid-target">
+              <small>Aktuelles Ziel</small>
+              <strong>{state.target ?? currentExercise.name}</strong>
+              <span>{state.dartsThrown ?? 0} Darts gespielt</span>
+            </article>
+
+            <article className="result-grid-player">
+              <small>Wer ist dran?</small>
+              <strong>{selectedPlayer?.displayName ?? "Spieler"}</strong>
+              <span>{session.status === "PAUSED" ? "Training pausiert" : "Du bist am Zug"}</span>
+            </article>
+
+            <article className="result-grid-free competition-live-panel">
+              <div className="competition-live-heading">
+                <div><small>Übung</small><strong>{currentExercise.name}</strong></div>
+                <span>{activePlan.goal}</span>
+              </div>
+              <div className="competition-live-metrics">
+                {metrics.map((metric) => <div key={metric.label}><small>{metric.label}</small><strong>{metric.value}</strong></div>)}
+              </div>
+              <div className="result-grid-progress"><span style={{ width: `${progressPercent}%` }} /></div>
+            </article>
+
+            <section className="result-grid-engine">
+              {running ? (
+                <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />
+              ) : (
+                <div className="result-grid-paused"><strong>Training pausiert</strong><span>Der aktuelle Stand ist sicher in der Datenbank gespeichert.</span></div>
+              )}
+            </section>
+
+            <footer className="result-grid-undo competition-control-row">
               <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
-              <button className="button secondary" disabled={saving} onClick={() => void sessionAction("finish")}>Training beenden</button>
-            </div>
-            {history.length > 0 && <div className="training-focus-history club-list">{history.filter((item) => item.exerciseId === currentExercise.id).slice(-4).reverse().map((item) => <article key={item.id}><div><strong>Aufnahme {item.roundNumber}</strong><small>{item.exercise?.name ?? currentExercise.name}</small></div><span>gespeichert</span><b>{item.calculatedScore ?? "–"}</b></article>)}</div>}
-            {message && <p className="form-message">{message}</p>}
+              {running
+                ? <button className="button" disabled={saving} onClick={() => void sessionAction("pause")}>Training pausieren</button>
+                : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+              {message && <p className="form-message">{message}</p>}
+            </footer>
           </section>
         </main>
       </div>
