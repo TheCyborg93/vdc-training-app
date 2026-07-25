@@ -9,8 +9,8 @@ function parseStringArray(value: unknown): string[] {
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(max, Math.max(min, Math.round(parsed))) : fallback;
 }
 
 function completionValue(value: unknown) {
@@ -21,7 +21,6 @@ function completionValue(value: unknown) {
 
 export async function GET() {
   try {
-    const added = await ensureDefaultExercises(prisma);
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
         orderBy: [{ favorite: "desc" }, { active: "desc" }, { name: "asc" }],
@@ -30,16 +29,25 @@ export async function GET() {
       prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } }),
     ]);
 
-    return NextResponse.json({ exercises, categories, catalogAdded: added });
+    return NextResponse.json({ exercises, categories });
   } catch (error) {
     console.error("Exercise GET failed", error);
-    return NextResponse.json({ error: "Übungen konnten nicht geladen werden." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    if (body.action === "sync-defaults") {
+      const added = await ensureDefaultExercises(prisma);
+      return NextResponse.json({ added, message: `${added} fehlende Standardübungen wurden ergänzt.` });
+    }
+
     const name = String(body.name ?? "").trim();
     const description = String(body.description ?? "").trim();
     const defaultMinutes = Number(body.defaultMinutes);
@@ -86,7 +94,9 @@ export async function POST(request: Request) {
 
       for (const categoryName of categoryNames) {
         const category = await tx.exerciseCategory.upsert({
-          where: { name: categoryName }, update: {}, create: { name: categoryName },
+          where: { name: categoryName },
+          update: {},
+          create: { name: categoryName },
         });
         await tx.exerciseCategoryLink.create({ data: { exerciseId: created.id, categoryId: category.id } });
       }
