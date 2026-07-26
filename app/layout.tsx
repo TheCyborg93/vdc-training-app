@@ -22,6 +22,7 @@ import "./vdc-core-pages.css";
 import "./vdc-workspaces.css";
 import "./vdc-final-polish.css";
 import "./vdc-dashboard-v3.css";
+import "./vdc-dashboard-insights.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
