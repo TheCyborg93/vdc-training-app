@@ -13,6 +13,7 @@ import "./training-archive.css";
 import "./vdc-os.css";
 import "./vdc-sprint2.css";
 import "./competition-premium.css";
+import "./vdc-sprint4.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
