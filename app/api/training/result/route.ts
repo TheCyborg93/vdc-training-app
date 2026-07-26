@@ -153,6 +153,7 @@ export async function POST(request: Request) {
     const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
     const storedValue = { ...applied.visitValue, progressBefore: progress } as Prisma.InputJsonValue;
     const completedAt = completed ? new Date() : null;
+    const nextProgressJson = nextProgress as Prisma.InputJsonValue;
 
     await prisma.$transaction(async (tx) => {
       await tx.exerciseResult.create({
@@ -169,8 +170,8 @@ export async function POST(request: Request) {
       await tx.boardSession.update({
         where: { id: session.id },
         data: completed
-          ? { status: "COMPLETED", completedAt, currentExerciseId: null, randomOrderJson: nextProgress }
-          : { currentExerciseId: nextExercise?.exerciseId ?? currentPlanExercise.exerciseId, randomOrderJson: nextProgress },
+          ? { status: "COMPLETED", completedAt, currentExerciseId: null, randomOrderJson: nextProgressJson }
+          : { currentExerciseId: nextExercise?.exerciseId ?? currentPlanExercise.exerciseId, randomOrderJson: nextProgressJson },
       });
       if (completed) {
         const openSessions = await tx.boardSession.count({ where: { trainingDayId: session.trainingDayId, status: { not: "COMPLETED" } } });
