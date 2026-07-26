@@ -32,7 +32,7 @@ function weekKey(value: Date) {
 
 function resolveFocus(categories: string[], fallback: string) {
   const normalized = [...categories, fallback].map((item) => item.toLowerCase());
-  return CORE_FOCUS.find((focus) => normalized.some((item) => item.includes(focus.toLowerCase()))) ?? fallback || "Sonstiges";
+  return CORE_FOCUS.find((focus) => normalized.some((item) => item.includes(focus.toLowerCase()))) ?? (fallback || "Sonstiges");
 }
 
 export async function GET(request: Request) {
