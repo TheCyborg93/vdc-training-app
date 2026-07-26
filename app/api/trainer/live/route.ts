@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const preferredRegion = "lhr1";
+export const dynamic = "force-dynamic";
+
 type ProgressState = {
   order: number[];
   exerciseIndex: number;
@@ -24,37 +27,65 @@ export async function GET() {
     const trainingDay = await prisma.trainingDay.findFirst({
       where: { status: { in: ["PUBLISHED", "RUNNING"] } },
       orderBy: [{ trainingDate: "asc" }, { createdAt: "desc" }],
-      include: {
+      select: {
+        id: true,
+        trainingDate: true,
+        status: true,
         trainingPlan: {
-          include: {
+          select: {
+            title: true,
+            goal: true,
+            durationMin: true,
             exercises: {
               orderBy: { position: "asc" },
-              include: { exercise: true },
+              select: {
+                exerciseId: true,
+                exercise: {
+                  select: { id: true, name: true, description: true },
+                },
+              },
             },
           },
         },
         assignments: {
           orderBy: [{ boardId: "asc" }, { position: "asc" }],
-          include: { board: true, player: true },
+          select: {
+            boardId: true,
+            playerId: true,
+            player: { select: { id: true, displayName: true } },
+          },
         },
         sessions: {
           orderBy: { boardId: "asc" },
-          include: {
-            board: true,
-            results: true,
+          select: {
+            id: true,
+            boardId: true,
+            status: true,
+            startedAt: true,
+            completedAt: true,
+            randomOrderJson: true,
+            board: { select: { id: true, name: true } },
+            _count: { select: { results: true } },
           },
         },
       },
     });
 
-    if (!trainingDay) return NextResponse.json(null);
+    if (!trainingDay) return NextResponse.json(null, { headers: { "Cache-Control": "no-store" } });
+
+    const assignmentsByBoard = new Map<number, typeof trainingDay.assignments>();
+    for (const assignment of trainingDay.assignments) {
+      const items = assignmentsByBoard.get(assignment.boardId) ?? [];
+      items.push(assignment);
+      assignmentsByBoard.set(assignment.boardId, items);
+    }
 
     const boards = trainingDay.sessions.map((session) => {
       const progress = readProgress(session.randomOrderJson);
-      const assignments = trainingDay.assignments.filter((item) => item.boardId === session.boardId);
+      const assignments = assignmentsByBoard.get(session.boardId) ?? [];
       const playersById = new Map(assignments.map((item) => [item.playerId, item.player]));
       const orderedPlayers = progress
-        ? progress.order.map((id) => playersById.get(id)).filter(Boolean)
+        ? progress.order.map((id) => playersById.get(id)).filter((player): player is NonNullable<typeof player> => Boolean(player))
         : assignments.map((item) => item.player);
       const currentPlayer = progress ? playersById.get(progress.order[progress.playerIndex]) ?? null : null;
       const currentPlanExercise = progress ? trainingDay.trainingPlan.exercises[progress.exerciseIndex] ?? null : null;
@@ -74,21 +105,24 @@ export async function GET() {
         exerciseIndex: progress?.exerciseIndex ?? 0,
         totalExercises,
         progressPercent: session.status === "COMPLETED" ? 100 : progressPercent,
-        resultCount: session.results.length,
+        resultCount: session._count.results,
       };
     });
 
-    return NextResponse.json({
-      id: trainingDay.id,
-      trainingDate: trainingDay.trainingDate,
-      status: trainingDay.status,
-      trainingPlan: {
-        title: trainingDay.trainingPlan.title,
-        goal: trainingDay.trainingPlan.goal,
-        durationMin: trainingDay.trainingPlan.durationMin,
+    return NextResponse.json(
+      {
+        id: trainingDay.id,
+        trainingDate: trainingDay.trainingDate,
+        status: trainingDay.status,
+        trainingPlan: {
+          title: trainingDay.trainingPlan.title,
+          goal: trainingDay.trainingPlan.goal,
+          durationMin: trainingDay.trainingPlan.durationMin,
+        },
+        boards,
       },
-      boards,
-    });
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("Trainer live GET failed", error);
     return NextResponse.json({ error: "Live-Training konnte nicht geladen werden." }, { status: 500 });
