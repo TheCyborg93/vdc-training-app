@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type BoardStatus = {
   boardId: number;
@@ -26,6 +26,13 @@ type LivePayload = {
   completedBoards: number;
   results: ResultItem[];
   updatedAt: string;
+};
+
+type InsightPayload = {
+  topPlayers: { playerId: number; name: string; results: number; activeDays: number; average: number | null }[];
+  topExercises: { exerciseId: number; name: string; results: number; players: number }[];
+  heatmap: { date: string; count: number }[];
+  homeTraining: { openSessions: number; plans: number };
 };
 
 type BoardWallProps = {
@@ -133,6 +140,7 @@ export function DashboardBoardWall({
 
 export function DashboardActivity({ initialResults }: ActivityProps) {
   const [results, setResults] = useState(initialResults);
+  const [insights, setInsights] = useState<InsightPayload | null>(null);
 
   useEffect(() => {
     const onLiveUpdate = (event: Event) => {
@@ -143,8 +151,31 @@ export function DashboardActivity({ initialResults }: ActivityProps) {
     return () => window.removeEventListener(liveEventName, onLiveUpdate);
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    async function loadInsights() {
+      try {
+        const response = await fetch("/api/trainer/dashboard-insights", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        setInsights((await response.json()) as InsightPayload);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    void loadInsights();
+    return () => controller.abort();
+  }, []);
+
+  const maxHeat = useMemo(
+    () => Math.max(1, ...(insights?.heatmap.map((item) => item.count) ?? [1])),
+    [insights],
+  );
+
   return (
-    <article className="vdc-v3-activity-card">
+    <article className="vdc-v3-activity-card vdc-v3-activity-expanded">
       <header className="vdc-section-heading"><div><span className="vdc-kicker">Aktivität</span><h2>Letzte Ergebnisse</h2></div></header>
       <div className="vdc-result-list">
         {results.slice(0, 6).map((item) => (
@@ -156,6 +187,56 @@ export function DashboardActivity({ initialResults }: ActivityProps) {
         ))}
         {results.length === 0 && <div className="vdc-empty-line">Noch keine Ergebnisse vorhanden.</div>}
       </div>
+
+      {!insights ? (
+        <div className="vdc-v3-insight-loading" aria-label="Dashboard-Auswertung wird geladen">
+          <span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" />
+        </div>
+      ) : (
+        <div className="vdc-v3-insight-stack">
+          <section className="vdc-v3-heatmap-panel">
+            <header><div><small>Trainingsrhythmus</small><strong>Letzte 8 Wochen</strong></div><span>{insights.heatmap.reduce((sum, item) => sum + item.count, 0)} Ergebnisse</span></header>
+            <div className="vdc-v3-heatmap" aria-label="Trainingsaktivität der letzten 56 Tage">
+              {insights.heatmap.map((item) => {
+                const level = item.count === 0 ? 0 : Math.max(1, Math.ceil((item.count / maxHeat) * 4));
+                return <span key={item.date} className={`level-${level}`} title={`${new Date(`${item.date}T12:00:00`).toLocaleDateString("de-DE")}: ${item.count} Ergebnisse`} />;
+              })}
+            </div>
+          </section>
+
+          <div className="vdc-v3-ranking-grid">
+            <section>
+              <header><small>Top-Spieler</small><Link href="/trainer/statistiken">Alle →</Link></header>
+              <div className="vdc-v3-mini-ranking">
+                {insights.topPlayers.slice(0, 3).map((player, index) => (
+                  <Link href={`/trainer/spieler/${player.playerId}`} key={player.playerId}>
+                    <b>{index + 1}</b><span><strong>{player.name}</strong><small>{player.activeDays} aktive Tage</small></span><em>{player.results}</em>
+                  </Link>
+                ))}
+                {insights.topPlayers.length === 0 && <p>Noch keine auswertbaren Spielergebnisse.</p>}
+              </div>
+            </section>
+
+            <section>
+              <header><small>Übungsranking</small><Link href="/trainer/uebungen">Katalog →</Link></header>
+              <div className="vdc-v3-mini-ranking">
+                {insights.topExercises.slice(0, 3).map((exercise, index) => (
+                  <div key={exercise.exerciseId}>
+                    <b>{index + 1}</b><span><strong>{exercise.name}</strong><small>{exercise.players} Spieler</small></span><em>{exercise.results}</em>
+                  </div>
+                ))}
+                {insights.topExercises.length === 0 && <p>Noch keine Übungsdaten vorhanden.</p>}
+              </div>
+            </section>
+          </div>
+
+          <Link className="vdc-v3-home-summary" href="/trainer/heimtraining">
+            <span>⌂</span>
+            <div><small>Heimtraining</small><strong>{insights.homeTraining.openSessions} offene Sessions</strong><p>{insights.homeTraining.plans} persönliche Pläne verfügbar</p></div>
+            <b>→</b>
+          </Link>
+        </div>
+      )}
     </article>
   );
 }
