@@ -1,0 +1,367 @@
+/* Phase 1.5 – Login, Spielerbereich, Heimtraining, Archiv & Mobile Polish */
+
+/* Login */
+.auth-page {
+  min-height: min(760px, calc(100vh - 40px));
+  max-width: 1180px;
+  margin: 20px auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-xl);
+  background: linear-gradient(145deg, rgba(15,21,29,.98), rgba(6,9,13,.99));
+  box-shadow: var(--vdc-shadow-md);
+}
+.auth-panel,
+.auth-visual { border: 0 !important; }
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(32px, 6vw, 76px);
+  background: linear-gradient(180deg, rgba(16,22,31,.98), rgba(9,13,19,.98));
+}
+.auth-panel .eyebrow { color: var(--vdc-primary-hover); letter-spacing: .17em; }
+.auth-panel h1 {
+  max-width: 560px;
+  margin: 16px 0 18px;
+  font-family: var(--vdc-font-display);
+  font-size: clamp(2.7rem, 6vw, 5.2rem);
+  line-height: .92;
+  letter-spacing: -.045em;
+}
+.auth-panel > p { max-width: 560px; margin: 0; color: var(--vdc-muted); }
+.login-form {
+  gap: 16px;
+  margin: 34px 0 24px;
+  padding: 24px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: rgba(4,7,11,.48);
+}
+.login-form label { gap: 9px; color: var(--vdc-text-soft); }
+.login-form input { min-height: 50px; padding-inline: 16px; }
+.login-form .button { min-height: 50px; }
+.auth-panel .text-link { align-self: flex-start; color: var(--vdc-muted); }
+.auth-panel .text-link:hover { color: white; }
+.auth-visual {
+  min-height: 560px;
+  padding: clamp(34px, 6vw, 74px);
+  justify-content: flex-end;
+  background:
+    linear-gradient(180deg, rgba(5,7,10,.12), rgba(5,7,10,.95)),
+    radial-gradient(circle at 72% 22%, rgba(220,31,50,.32), transparent 25rem),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 1px, transparent 1px 34px),
+    var(--vdc-bg-900);
+}
+.auth-visual::before {
+  content: "";
+  position: absolute;
+  width: 310px;
+  height: 310px;
+  right: -72px;
+  top: 64px;
+  border-radius: 50%;
+  border: 32px solid rgba(220,31,50,.08);
+  box-shadow: 0 0 0 24px rgba(255,255,255,.015), 0 0 0 60px rgba(220,31,50,.025);
+}
+.auth-visual h2 {
+  position: relative;
+  z-index: 1;
+  max-width: 520px;
+  font-family: var(--vdc-font-display);
+  font-size: clamp(2rem, 4vw, 4rem);
+  line-height: .95;
+  text-transform: uppercase;
+}
+.auth-visual p { position: relative; z-index: 1; max-width: 520px; }
+.visual-number { font-family: var(--vdc-font-mono); color: rgba(255,255,255,.045); }
+.visual-lines { opacity: .65; }
+
+/* Persönliches Spieler-Dashboard */
+.club-dashboard { gap: 22px; }
+.club-hero {
+  min-height: 270px;
+  padding: clamp(26px, 4vw, 48px);
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-xl);
+  background:
+    linear-gradient(90deg, rgba(7,10,15,.98), rgba(7,10,15,.6)),
+    radial-gradient(circle at 82% 42%, rgba(220,31,50,.25), transparent 24rem);
+  box-shadow: var(--vdc-shadow-sm);
+}
+.club-hero h1 {
+  max-width: 1000px;
+  margin: 16px 0 14px;
+  font-family: var(--vdc-font-display);
+  font-size: clamp(2.7rem, 6vw, 5.5rem);
+  letter-spacing: -.035em;
+  line-height: .92;
+}
+.club-hero h1 span { color: var(--vdc-primary-hover); }
+.club-hero form {
+  max-width: 380px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.club-hero form .button { margin-top: 0 !important; }
+.club-kpis { gap: 14px; }
+.club-kpi {
+  min-height: 150px;
+  padding: 22px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: linear-gradient(145deg, rgba(18,24,33,.97), rgba(9,13,19,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+.club-kpi::before { width: 3px; background: var(--vdc-primary); }
+.club-kpi strong {
+  font-family: var(--vdc-font-mono);
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-variant-numeric: tabular-nums;
+}
+.club-grid-2 { gap: 18px; }
+.club-panel {
+  border: 1px solid var(--vdc-line) !important;
+  border-radius: var(--vdc-radius-lg) !important;
+  background: linear-gradient(145deg, rgba(17,23,32,.97), rgba(8,12,17,.98)) !important;
+  box-shadow: var(--vdc-shadow-sm);
+}
+.club-section-title h2 { font-family: var(--vdc-font-display); }
+.club-training-card {
+  grid-template-columns: 150px minmax(0,1fr);
+  border: 1px solid var(--vdc-red-line);
+  border-radius: var(--vdc-radius-lg);
+  overflow: hidden;
+  background: radial-gradient(circle at 12% 50%, rgba(220,31,50,.18), transparent 29%), rgba(4,7,11,.35);
+}
+.club-training-info a,
+.club-action {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: var(--vdc-radius-sm);
+  background: linear-gradient(180deg, var(--vdc-primary-hover), var(--vdc-primary-dark));
+}
+.club-list article { min-height: 66px; padding: 14px 8px; }
+.club-list article b { font-family: var(--vdc-font-mono); font-size: 1rem; }
+.club-progress-ring { box-shadow: inset 0 0 0 1px var(--vdc-line), 0 18px 40px rgba(0,0,0,.25); }
+.club-progress-ring strong { font-family: var(--vdc-font-mono); }
+
+/* Heimtraining */
+.home-training-page,
+.home-training-shell,
+.home-training-dashboard { display: grid; gap: 20px; }
+.home-training-page .dashboard-heading,
+.home-training-shell .dashboard-heading { margin-bottom: 0; }
+.home-training-builder,
+.home-training-layout,
+.home-training-overview,
+.home-training-focus {
+  gap: 18px;
+}
+.home-training-builder,
+.home-training-setup,
+.home-training-plan-list,
+.home-training-session,
+.home-training-focus,
+.home-training-report,
+.home-training-history,
+.home-training-card {
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: linear-gradient(145deg, rgba(18,24,33,.97), rgba(8,12,17,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+.home-training-builder,
+.home-training-setup,
+.home-training-session,
+.home-training-focus { padding: clamp(18px, 3vw, 28px); }
+.home-training-plan-grid,
+.home-plan-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+.home-training-plan-card,
+.home-plan-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-md);
+  background: rgba(255,255,255,.025);
+  transition: border-color var(--vdc-speed), transform var(--vdc-speed);
+}
+.home-training-plan-card:hover,
+.home-plan-card:hover { border-color: var(--vdc-red-line); transform: translateY(-2px); }
+.home-training-metrics,
+.home-live-metrics,
+.live-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+}
+.home-training-metrics > div,
+.home-live-metrics > div,
+.live-metrics > div {
+  min-height: 96px;
+  padding: 16px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-md);
+  background: rgba(255,255,255,.025);
+}
+.home-training-metrics strong,
+.home-live-metrics strong,
+.live-metrics strong { font-family: var(--vdc-font-mono); font-variant-numeric: tabular-nums; }
+.home-training-controls,
+.home-session-actions,
+.home-training-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.home-training-controls .button,
+.home-session-actions .button,
+.home-training-actions .button { flex: 1 1 170px; }
+
+/* Archiv */
+.training-archive-page,
+.archive-page,
+.archive-dashboard { display: grid; gap: 20px; }
+.archive-filters,
+.training-archive-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: rgba(255,255,255,.025);
+}
+.archive-grid,
+.training-archive-grid,
+.archive-list { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
+.archive-card,
+.training-archive-card {
+  position: relative;
+  overflow: hidden;
+  padding: 22px;
+  border: 1px solid var(--vdc-line) !important;
+  border-radius: var(--vdc-radius-lg) !important;
+  background: linear-gradient(145deg, rgba(18,24,33,.97), rgba(8,12,17,.98)) !important;
+  box-shadow: var(--vdc-shadow-sm);
+}
+.archive-card::before,
+.training-archive-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--vdc-success);
+}
+.archive-card h2,
+.archive-card h3,
+.training-archive-card h2,
+.training-archive-card h3 { font-family: var(--vdc-font-display); }
+.archive-stats,
+.archive-summary,
+.training-archive-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 9px;
+  margin-top: 16px;
+}
+.archive-stats > div,
+.archive-summary > div,
+.training-archive-stats > div {
+  padding: 13px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-sm);
+  background: rgba(255,255,255,.025);
+}
+.archive-stats strong,
+.archive-summary strong,
+.training-archive-stats strong { font-family: var(--vdc-font-mono); font-variant-numeric: tabular-nums; }
+
+/* Abschließende mobile Regeln */
+@media (max-width: 1050px) {
+  .home-training-plan-grid,
+  .home-plan-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .archive-filters,
+  .training-archive-filters { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 760px) {
+  body { overflow-x: hidden; }
+  .auth-page {
+    min-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    grid-template-columns: 1fr;
+  }
+  .auth-panel { min-height: 100vh; padding: 28px 18px 40px; justify-content: center; }
+  .auth-panel h1 { font-size: clamp(2.8rem, 15vw, 4.6rem); }
+  .auth-visual { display: none; }
+  .login-form { padding: 18px; }
+
+  .club-hero { min-height: auto; padding: 24px 18px; }
+  .club-hero h1 { font-size: clamp(2.5rem, 13vw, 4.1rem); }
+  .club-hero form { grid-template-columns: 1fr; max-width: none; }
+  .club-hero form .button { width: 100%; }
+  .club-kpis { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .club-kpi { min-height: 128px; padding: 16px; }
+  .club-kpi strong { font-size: 1.8rem; }
+  .club-grid-2 { grid-template-columns: 1fr; }
+  .club-training-card { grid-template-columns: 90px minmax(0,1fr); }
+  .club-board-art span { width: 68px; height: 68px; }
+
+  .home-training-plan-grid,
+  .home-plan-grid,
+  .archive-grid,
+  .training-archive-grid,
+  .archive-list { grid-template-columns: 1fr; }
+  .home-training-metrics,
+  .home-live-metrics,
+  .live-metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .archive-filters,
+  .training-archive-filters { grid-template-columns: 1fr; }
+  .archive-stats,
+  .archive-summary,
+  .training-archive-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .home-training-controls,
+  .home-session-actions,
+  .home-training-actions {
+    position: sticky;
+    bottom: 74px;
+    z-index: 20;
+    margin-inline: -4px;
+    padding: 10px;
+    border: 1px solid var(--vdc-line);
+    border-radius: var(--vdc-radius-md);
+    background: rgba(7,10,15,.94);
+    backdrop-filter: blur(18px);
+  }
+  .home-training-controls .button,
+  .home-session-actions .button,
+  .home-training-actions .button { min-height: 48px; }
+
+  .vdc-content > main,
+  .vdc-content > section { min-width: 0; }
+  .vdc-content img,
+  .vdc-content svg,
+  .vdc-content canvas { max-width: 100%; }
+  .vdc-content .button { min-height: 46px; }
+}
+
+@media (max-width: 420px) {
+  .club-kpis { grid-template-columns: 1fr; }
+  .home-training-metrics,
+  .home-live-metrics,
+  .live-metrics,
+  .archive-stats,
+  .archive-summary,
+  .training-archive-stats { grid-template-columns: 1fr; }
+}
