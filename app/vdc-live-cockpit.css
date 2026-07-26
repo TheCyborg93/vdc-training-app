@@ -1,0 +1,66 @@
+/* Phase 3.3 – Trainer Cockpit */
+.trainer-cockpit-page { display:grid; gap:18px; }
+.trainer-cockpit-overview {
+  display:grid;
+  grid-template-columns:minmax(260px,1.15fr) minmax(360px,1fr) auto;
+  gap:14px;
+  align-items:stretch;
+  padding:18px;
+  border:1px solid var(--vdc-line);
+  border-radius:var(--vdc-radius-xl);
+  background:linear-gradient(145deg,rgba(18,24,33,.98),rgba(7,11,16,.99));
+  box-shadow:var(--vdc-shadow-sm);
+}
+.trainer-cockpit-progress { display:grid; gap:13px; padding:18px; border:1px solid rgba(220,31,50,.24); border-radius:var(--vdc-radius-lg); background:rgba(220,31,50,.045); }
+.trainer-cockpit-progress>div:first-child { display:grid; grid-template-columns:1fr auto; gap:4px 18px; align-items:end; }
+.trainer-cockpit-progress strong { grid-row:1/3; grid-column:2; font-family:var(--vdc-font-mono); font-size:clamp(2.2rem,5vw,4rem); line-height:.9; }
+.trainer-cockpit-progress p { margin:0; color:var(--vdc-muted); font-size:.72rem; }
+.trainer-cockpit-bar { height:9px; overflow:hidden; border-radius:999px; background:rgba(255,255,255,.06); }
+.trainer-cockpit-bar span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--vdc-primary),#ff6675); transition:width .3s ease; }
+.trainer-cockpit-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.trainer-cockpit-metrics article { display:grid; align-content:center; gap:5px; min-height:100px; padding:14px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-md); background:rgba(255,255,255,.025); }
+.trainer-cockpit-metrics small { color:var(--vdc-muted); font-size:.58rem; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+.trainer-cockpit-metrics strong { font-family:var(--vdc-font-mono); font-size:1.5rem; }
+.trainer-cockpit-metrics span { color:var(--vdc-muted); font-size:.64rem; }
+.trainer-cockpit-actions { display:grid; align-content:center; gap:8px; min-width:190px; }
+.trainer-cockpit-actions .button { width:100%; }
+.trainer-cockpit-layout { display:grid; grid-template-columns:minmax(0,1fr) 310px; gap:16px; align-items:start; }
+.trainer-cockpit-board-area { min-width:0; display:grid; gap:14px; }
+.trainer-cockpit-timeline { position:sticky; top:96px; max-height:calc(100vh - 120px); overflow:auto; padding:18px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-xl); background:linear-gradient(145deg,rgba(18,24,33,.98),rgba(8,12,17,.99)); box-shadow:var(--vdc-shadow-sm); }
+.trainer-cockpit-timeline>header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:15px; }
+.trainer-cockpit-timeline h2 { margin:5px 0 0; font-family:var(--vdc-font-display); font-size:1.25rem; }
+.trainer-cockpit-timeline>header>span { min-width:30px; height:30px; display:grid; place-items:center; border-radius:10px; background:rgba(220,31,50,.1); color:#ff7d89; font-family:var(--vdc-font-mono); font-size:.7rem; }
+.trainer-cockpit-timeline>div { display:grid; gap:8px; }
+.trainer-cockpit-timeline article { display:grid; grid-template-columns:58px 1fr; gap:10px; padding:11px; position:relative; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-md); background:rgba(255,255,255,.022); }
+.trainer-cockpit-timeline article::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:3px; border-radius:0 3px 3px 0; background:var(--vdc-cyan); }
+.trainer-cockpit-timeline article.is-success::before { background:var(--vdc-success); }
+.trainer-cockpit-timeline article.is-warning::before { background:var(--vdc-warning); }
+.trainer-cockpit-timeline time { color:var(--vdc-muted); font-family:var(--vdc-font-mono); font-size:.6rem; }
+.trainer-cockpit-timeline article div { display:grid; gap:3px; min-width:0; }
+.trainer-cockpit-timeline strong { font-size:.7rem; }
+.trainer-cockpit-timeline p { margin:0; color:var(--vdc-muted); font-size:.66rem; line-height:1.35; }
+.trainer-health-badge { display:inline-flex; align-items:center; gap:7px; min-height:30px; padding:0 10px; border:1px solid var(--vdc-line); border-radius:999px; color:var(--vdc-text-soft); font-size:.58rem; font-weight:850; letter-spacing:.07em; text-transform:uppercase; }
+.trainer-health-badge i { width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
+.trainer-health-badge.is-good { color:var(--vdc-success); border-color:rgba(49,201,124,.28); background:rgba(49,201,124,.06); }
+.trainer-health-badge.is-warning { color:var(--vdc-warning); border-color:rgba(242,173,69,.28); background:rgba(242,173,69,.06); }
+.trainer-health-badge.is-critical { color:var(--vdc-error); border-color:rgba(239,68,68,.32); background:rgba(239,68,68,.07); }
+.trainer-health-badge.is-done { color:var(--vdc-cyan); border-color:rgba(22,201,237,.28); background:rgba(22,201,237,.06); }
+.trainer-health-badge.is-waiting { color:var(--vdc-muted); }
+.trainer-board-health-detail { margin:-2px 0 12px; color:var(--vdc-muted); font-size:.68rem; }
+.trainer-board-overview.health-critical { border-color:rgba(239,68,68,.42); box-shadow:0 0 0 1px rgba(239,68,68,.08),var(--vdc-shadow-sm); }
+.trainer-board-overview.health-warning { border-color:rgba(242,173,69,.32); }
+.trainer-board-overview.health-good { border-color:rgba(49,201,124,.24); }
+@media (max-width:1280px) {
+  .trainer-cockpit-overview { grid-template-columns:1fr 1fr; }
+  .trainer-cockpit-actions { grid-column:1/-1; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .trainer-cockpit-layout { grid-template-columns:1fr; }
+  .trainer-cockpit-timeline { position:static; max-height:none; }
+}
+@media (max-width:760px) {
+  .trainer-cockpit-overview { grid-template-columns:1fr; padding:14px; border-radius:var(--vdc-radius-lg); }
+  .trainer-cockpit-progress>div:first-child { grid-template-columns:1fr auto; }
+  .trainer-cockpit-metrics { grid-template-columns:1fr; }
+  .trainer-cockpit-metrics article { min-height:84px; }
+  .trainer-cockpit-actions { grid-template-columns:1fr; }
+  .trainer-cockpit-timeline { padding:15px; border-radius:var(--vdc-radius-lg); }
+}
