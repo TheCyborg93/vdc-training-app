@@ -61,7 +61,9 @@ export async function GET() {
     const combined: CoachResultWithPlayer[] = [...clubResults, ...homeResults];
     const profiles = players.map((player) => {
       const results = combined.filter((result) => result.playerId === player.id);
-      const activeDays = new Set(results.map((result) => result.createdAt.toISOString().slice(0, 10))).size;
+      const activeDays = new Set(
+        results.map((result) => new Date(result.createdAt).toISOString().slice(0, 10)),
+      ).size;
       return {
         playerId: player.id,
         playerName: player.displayName,
