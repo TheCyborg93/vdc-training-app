@@ -1,0 +1,174 @@
+/* Phase 2 – Dashboard V3 */
+.vdc-dashboard-v3 { display:grid; gap:24px; }
+
+.vdc-v3-hero {
+  min-height:280px;
+  display:grid;
+  grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);
+  gap:22px;
+  align-items:stretch;
+  padding:clamp(24px,4vw,42px);
+  position:relative;
+  overflow:hidden;
+  border:1px solid var(--vdc-line);
+  border-radius:var(--vdc-radius-xl);
+  background:
+    linear-gradient(110deg,rgba(220,31,50,.12),transparent 34%),
+    linear-gradient(145deg,rgba(19,26,36,.98),rgba(7,10,15,.99));
+  box-shadow:var(--vdc-shadow-md);
+}
+.vdc-v3-hero::after {
+  content:"";
+  position:absolute;
+  right:-110px;
+  top:-180px;
+  width:480px;
+  height:480px;
+  border:52px solid rgba(220,31,50,.04);
+  border-radius:50%;
+  pointer-events:none;
+}
+.vdc-v3-hero-copy { align-self:center; position:relative; z-index:1; }
+.vdc-v3-hero-copy h1 {
+  max-width:760px;
+  margin:9px 0 12px;
+  font-family:var(--vdc-font-display);
+  font-size:clamp(2.6rem,6vw,5.3rem);
+  line-height:.9;
+  letter-spacing:-.055em;
+}
+.vdc-v3-hero-copy p { max-width:720px; margin:0; color:var(--vdc-text-soft); font-size:clamp(.92rem,1.5vw,1.08rem); line-height:1.7; }
+.vdc-v3-hero-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
+
+.vdc-v3-countdown-card {
+  min-height:200px;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:10px;
+  position:relative;
+  z-index:1;
+  text-align:center;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:var(--vdc-radius-xl);
+  background:rgba(4,7,11,.58);
+  backdrop-filter:blur(12px);
+}
+.vdc-v3-countdown-card small { color:var(--vdc-muted); font-size:.67rem; font-weight:850; letter-spacing:.14em; text-transform:uppercase; }
+.vdc-v3-countdown-value { font-family:var(--vdc-font-mono); font-size:clamp(2.2rem,5vw,4.1rem); line-height:1; letter-spacing:-.06em; font-variant-numeric:tabular-nums; }
+.vdc-v3-countdown-value.is-live { color:var(--vdc-success); text-shadow:0 0 24px rgba(49,201,124,.25); }
+.vdc-v3-countdown-value.is-empty { color:var(--vdc-muted); }
+.vdc-v3-countdown-card span { color:var(--vdc-muted); font-size:.76rem; text-transform:capitalize; }
+
+.vdc-v3-kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:13px; }
+.vdc-v3-kpi-grid article {
+  min-height:126px;
+  display:grid;
+  grid-template-columns:44px 1fr;
+  align-items:center;
+  gap:15px;
+  padding:18px;
+  position:relative;
+  overflow:hidden;
+  border:1px solid var(--vdc-line);
+  border-radius:var(--vdc-radius-lg);
+  background:linear-gradient(145deg,rgba(20,27,37,.97),rgba(8,12,17,.98));
+  box-shadow:var(--vdc-shadow-sm);
+}
+.vdc-v3-kpi-grid article::before { content:""; position:absolute; left:0; top:18px; bottom:18px; width:3px; background:var(--vdc-primary); border-radius:0 3px 3px 0; }
+.vdc-v3-kpi-symbol { width:44px; height:44px; display:grid; place-items:center; border:1px solid rgba(220,31,50,.26); border-radius:13px; background:rgba(220,31,50,.09); color:#ff7c89; font-size:1.1rem; }
+.vdc-v3-kpi-grid small { color:var(--vdc-muted); font-size:.62rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+.vdc-v3-kpi-grid strong { display:block; margin:5px 0 3px; font-family:var(--vdc-font-mono); font-size:clamp(1.8rem,3vw,2.6rem); line-height:1; }
+.vdc-v3-kpi-grid strong em { color:var(--vdc-muted); font-size:.95rem; font-style:normal; }
+.vdc-v3-kpi-grid p { margin:0; color:var(--vdc-muted); font-size:.7rem; }
+
+.vdc-v3-command-grid { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(310px,.65fr); gap:16px; }
+.vdc-v3-training-card,
+.vdc-v3-board-wall,
+.vdc-v3-coach-card,
+.vdc-v3-activity-card,
+.vdc-v3-planning-card {
+  border:1px solid var(--vdc-line);
+  border-radius:var(--vdc-radius-xl);
+  background:linear-gradient(145deg,rgba(18,24,33,.98),rgba(8,12,17,.99));
+  box-shadow:var(--vdc-shadow-sm);
+}
+.vdc-v3-training-card { min-height:390px; padding:clamp(22px,3vw,32px); position:relative; overflow:hidden; }
+.vdc-v3-training-card::after { content:""; position:absolute; right:-85px; bottom:-170px; width:390px; height:390px; border:42px solid rgba(220,31,50,.035); border-radius:50%; pointer-events:none; }
+.vdc-v3-training-card>header,.vdc-v3-board-wall>header,.vdc-v3-coach-card>header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; position:relative; z-index:1; }
+.vdc-v3-training-card h2,.vdc-v3-board-wall h2,.vdc-v3-coach-card h2 { margin:6px 0 0; font-family:var(--vdc-font-display); font-size:clamp(1.35rem,2.4vw,2rem); }
+.vdc-v3-training-date { display:grid; gap:4px; margin:36px 0 25px; position:relative; z-index:1; }
+.vdc-v3-training-date strong { font-family:var(--vdc-font-mono); font-size:clamp(3.3rem,8vw,6.4rem); line-height:.88; letter-spacing:-.08em; }
+.vdc-v3-training-date span { color:var(--vdc-text-soft); text-transform:capitalize; }
+.vdc-v3-training-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; position:relative; z-index:1; }
+.vdc-v3-training-facts>div { padding:14px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-md); background:rgba(255,255,255,.025); }
+.vdc-v3-training-facts small { display:block; color:var(--vdc-muted); font-size:.6rem; letter-spacing:.1em; text-transform:uppercase; }
+.vdc-v3-training-facts strong { display:block; margin-top:6px; font-size:.84rem; }
+.vdc-v3-training-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; position:relative; z-index:1; }
+
+.vdc-v3-board-wall { padding:22px; }
+.vdc-v3-board-wall>header>strong { color:var(--vdc-success); font-family:var(--vdc-font-mono); font-size:.74rem; text-transform:uppercase; }
+.vdc-v3-board-list { display:grid; gap:8px; margin:20px 0 14px; }
+.vdc-v3-board-list>div { min-height:61px; display:grid; grid-template-columns:12px 1fr auto; align-items:center; gap:11px; padding:10px 12px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-md); background:rgba(255,255,255,.024); }
+.vdc-v3-board-list>div.is-running { border-color:rgba(49,201,124,.3); background:rgba(49,201,124,.045); }
+.vdc-v3-board-list>div.is-paused { border-color:rgba(242,173,69,.28); }
+.vdc-v3-board-list>div>div { display:grid; gap:2px; min-width:0; }
+.vdc-v3-board-list strong,.vdc-v3-board-list small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vdc-v3-board-list small { color:var(--vdc-muted); font-size:.66rem; }
+.vdc-v3-board-list b { color:var(--vdc-muted); font-size:.57rem; letter-spacing:.09em; text-transform:uppercase; }
+.vdc-v3-board-list .is-running b { color:var(--vdc-success); }
+.vdc-v3-board-summary { display:flex; gap:12px; margin-bottom:14px; color:var(--vdc-muted); font-size:.65rem; }
+
+.vdc-v3-section { display:grid; gap:14px; }
+.vdc-v3-action-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.vdc-v3-action-grid>a { min-height:124px; display:grid; grid-template-columns:42px 1fr auto; align-items:center; gap:13px; padding:17px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-lg); background:linear-gradient(145deg,rgba(18,24,33,.96),rgba(8,12,17,.98)); transition:transform var(--vdc-speed),border-color var(--vdc-speed),box-shadow var(--vdc-speed); }
+.vdc-v3-action-grid>a:hover { transform:translateY(-2px); border-color:rgba(220,31,50,.35); box-shadow:var(--vdc-shadow-md); }
+.vdc-v3-action-grid>a>span { width:42px; height:42px; display:grid; place-items:center; border-radius:12px; background:rgba(220,31,50,.1); color:#ff7986; font-weight:900; }
+.vdc-v3-action-grid>a p { margin:5px 0 0; color:var(--vdc-muted); font-size:.71rem; line-height:1.45; }
+.vdc-v3-action-grid>a>b { color:var(--vdc-muted); }
+
+.vdc-v3-insights-grid { display:grid; grid-template-columns:minmax(260px,.75fr) minmax(0,1.35fr) minmax(250px,.65fr); gap:16px; }
+.vdc-v3-coach-card,.vdc-v3-activity-card,.vdc-v3-planning-card { padding:22px; }
+.vdc-v3-coach-card>header>span { width:38px; height:38px; display:grid; place-items:center; border:1px solid rgba(22,201,237,.28); border-radius:12px; background:rgba(22,201,237,.08); color:var(--vdc-cyan); font-size:.65rem; font-weight:900; }
+.vdc-v3-coach-card>strong { display:block; margin:24px 0 10px; font-family:var(--vdc-font-display); font-size:1.35rem; line-height:1.2; }
+.vdc-v3-coach-card>p { margin:0 0 20px; color:var(--vdc-muted); line-height:1.65; font-size:.78rem; }
+.vdc-v3-planning-list { display:grid; gap:8px; }
+.vdc-v3-planning-list>div { display:grid; grid-template-columns:1fr auto; gap:4px 12px; align-items:center; padding:13px; border:1px solid var(--vdc-line); border-radius:var(--vdc-radius-md); background:rgba(255,255,255,.024); }
+.vdc-v3-planning-list span { color:var(--vdc-muted); font-size:.68rem; }
+.vdc-v3-planning-list strong { grid-row:1/3; grid-column:2; font-family:var(--vdc-font-mono); font-size:1.5rem; }
+.vdc-v3-planning-list a { color:#ff7986; font-size:.65rem; font-weight:800; }
+
+@media (max-width:1180px) {
+  .vdc-v3-kpi-grid,.vdc-v3-action-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vdc-v3-insights-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vdc-v3-planning-card { grid-column:1/-1; }
+}
+
+@media (max-width:900px) {
+  .vdc-v3-hero,.vdc-v3-command-grid { grid-template-columns:1fr; }
+  .vdc-v3-countdown-card { min-height:150px; }
+  .vdc-v3-board-wall { order:2; }
+}
+
+@media (max-width:680px) {
+  .vdc-dashboard-v3 { gap:16px; }
+  .vdc-v3-hero { min-height:0; padding:22px 18px; border-radius:var(--vdc-radius-lg); }
+  .vdc-v3-hero-copy h1 { font-size:2.7rem; }
+  .vdc-v3-hero-actions .button { width:100%; }
+  .vdc-v3-countdown-card { min-height:130px; border-radius:var(--vdc-radius-lg); }
+  .vdc-v3-kpi-grid,.vdc-v3-action-grid,.vdc-v3-insights-grid { grid-template-columns:1fr; }
+  .vdc-v3-kpi-grid article { min-height:108px; }
+  .vdc-v3-training-card { min-height:0; padding:20px 16px; border-radius:var(--vdc-radius-lg); }
+  .vdc-v3-training-card>header { align-items:flex-start; flex-direction:column; }
+  .vdc-v3-training-date { margin:26px 0 18px; }
+  .vdc-v3-training-date strong { font-size:4rem; }
+  .vdc-v3-training-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vdc-v3-training-actions .button { flex:1 1 100%; }
+  .vdc-v3-board-wall,.vdc-v3-coach-card,.vdc-v3-activity-card,.vdc-v3-planning-card { padding:17px; border-radius:var(--vdc-radius-lg); }
+  .vdc-v3-action-grid>a { min-height:105px; }
+  .vdc-v3-planning-card { grid-column:auto; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .vdc-v3-action-grid>a { transition:none; }
+}
