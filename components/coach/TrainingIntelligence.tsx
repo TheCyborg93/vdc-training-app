@@ -49,8 +49,7 @@ export default function TrainingIntelligence({ data }: { data: TrainingIntellige
         message: `„${result.plan.title}“ wurde mit ${result.plan.durationMin} Minuten gespeichert.${missing}`,
         tone: missing ? "warning" : "success",
       });
-      router.push("/trainer/trainingsplaene");
-      router.refresh();
+      router.push(`/trainer/trainingsplaene?edit=${result.plan.id}&source=ai`);
     } catch (error) {
       notify("Entwurf konnte nicht erstellt werden", {
         message: error instanceof Error ? error.message : "Unbekannter Fehler.",
