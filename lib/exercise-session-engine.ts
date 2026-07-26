@@ -49,6 +49,10 @@ function number(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function integer(value: unknown, fallback = 0) {
+  return Math.trunc(number(value, fallback));
+}
+
 function bool(value: unknown) {
   return value === true || value === "true" || value === 1 || value === "1";
 }
@@ -59,6 +63,36 @@ function list(value: unknown): unknown[] {
 
 function targetLabel(value: unknown) {
   return value == null ? "–" : String(value);
+}
+
+function dartCount(raw: Record<string, unknown>, fallback = 3) {
+  return Math.max(1, Math.min(9, integer(raw.dartsUsed ?? raw.dartsThrown, fallback)));
+}
+
+function segmentCounts(raw: Record<string, unknown>, dartsPerVisit = 3) {
+  const single = Math.max(0, Math.min(dartsPerVisit, integer(raw.single)));
+  const double = Math.max(0, Math.min(dartsPerVisit - single, integer(raw.double)));
+  const triple = Math.max(0, Math.min(dartsPerVisit - single - double, integer(raw.triple)));
+  return { single, double, triple, hits: single + double + triple };
+}
+
+function numericTarget(target: unknown) {
+  const label = String(target ?? "").toUpperCase();
+  if (label === "BULL" || label === "SBULL") return 25;
+  if (label === "DBULL") return 25;
+  const parsed = Number(label.replace(/^[DST]/, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function targetSegmentScore(target: unknown, single: number, double: number, triple: number) {
+  const label = String(target ?? "").toUpperCase();
+  if (label === "BULL" || label === "SBULL" || label === "DBULL") return single * 25 + double * 50;
+  const value = numericTarget(label);
+  if (label.startsWith("D")) return double * value * 2;
+  if (label.startsWith("T")) return triple * value * 3;
+  if (label === "D") return double;
+  if (label === "T") return triple;
+  return value * (single + double * 2 + triple * 3);
 }
 
 export function detectExerciseKind(exercise: ExerciseDefinition): string {
@@ -98,17 +132,12 @@ export function createInitialExerciseState(exercise: ExerciseDefinition): Player
   const common = { kind, visit: 1, completed: false, dartsThrown: 0, engineConfig, ...configuredState(exercise) };
   const targets = list(engineConfig.targets ?? engineConfig.sequence);
 
-  if (kind === "BOB27" || kind === "BOB27_CONFIGURED") {
-    const startScore = number(engineConfig.startScore, 27);
-    return { ...common, score: startScore, targetIndex: 0, target: "D1", hits: 0 };
-  }
-  if (kind.startsWith("AROUND_") || kind === "TARGET_SEQUENCE") {
+  if (kind === "BOB27" || kind === "BOB27_CONFIGURED") return { ...common, score: number(engineConfig.startScore, 27), targetIndex: 0, target: "D1", hits: 0 };
+  if (kind.startsWith("AROUND_") || kind === "AROUND_SEQUENCE" || kind === "TARGET_SEQUENCE") {
     const fallback = kind === "AROUND_DOUBLES" ? "D1" : kind === "AROUND_TREBLES" ? "T1" : "1";
     return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? fallback), hits: 0 };
   }
-  if (kind === "SHANGHAI" || kind === "SHANGHAI_CONFIGURED") {
-    return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? 1) };
-  }
+  if (kind === "SHANGHAI" || kind === "SHANGHAI_CONFIGURED") return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? 1) };
   if (kind === "JDC_CHALLENGE") return { ...common, score: 0, targetIndex: 0, target: "Bob's 27", phase: "BOB27" };
   if (kind === "GAME_121") {
     const startTarget = number(engineConfig.startTarget, 121);
@@ -123,9 +152,7 @@ export function createInitialExerciseState(exercise: ExerciseDefinition): Player
     const randomTarget = kind === "RANDOM_CHECKOUT" ? Math.floor(Math.random() * (number(engineConfig.max, 170) - number(engineConfig.min, 2) + 1)) + number(engineConfig.min, 2) : checkoutTargets[0];
     return { ...common, score: 0, targetIndex: 0, target: targetLabel(randomTarget), attempts: 0, successes: 0, attemptDarts: 0 };
   }
-  if (["SEGMENT_POINTS", "HALVE_IT", "SWITCH", "BASEBALL", "FIVES", "COUNT_UP"].includes(kind)) {
-    return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? engineConfig.target ?? exercise.name), hits: 0 };
-  }
+  if (["SEGMENT_POINTS", "HALVE_IT", "SWITCH", "BASEBALL", "FIVES", "COUNT_UP"].includes(kind)) return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? engineConfig.target ?? exercise.name), hits: 0 };
   if (kind === "CRICKET") {
     const cricketTargets = targets.length ? targets : [15, 16, 17, 18, 19, 20, "BULL"];
     return { ...common, score: 0, targetIndex: 0, target: targetLabel(cricketTargets[0]), marks: Object.fromEntries(cricketTargets.map((target) => [String(target), 0])) };
@@ -155,37 +182,47 @@ export function applyVisit(exercise: ExerciseDefinition, state: PlayerExerciseSt
   if (bool(raw.timedOut)) return result(exercise, withConfiguredCompletion(exercise, next, true), { ...visitValue, timedOut: true }, null);
   const config = state.engineConfig ?? configOf(exercise);
   const targets = list(config.targets ?? config.sequence);
+  const dartsPerVisit = Math.max(1, Math.min(9, integer(config.dartsPerVisit, 3)));
 
   if (state.kind === "BOB27" || state.kind === "BOB27_CONFIGURED") {
-    const hits = Math.max(0, Math.min(3, Math.trunc(number(raw.hits))));
+    const hits = Math.max(0, Math.min(3, integer(raw.hits)));
     const index = state.targetIndex ?? 0;
     const doubleValue = index < 20 ? (index + 1) * 2 : 50;
     const mode = String(config.mode ?? "CLASSIC");
     const missPenalty = mode === "EASY" ? 0 : mode === "HARDCORE" ? Math.max(0, 3 - hits) * (index < 20 ? index + 1 : 25) : hits === 0 ? doubleValue : 0;
     const score = (state.score ?? number(config.startScore, 27)) + hits * doubleValue - missPenalty;
-    const finishedByScore = mode !== "EASY" && score <= 0;
-    const completed = finishedByScore || index >= 20;
+    const completed = (mode !== "EASY" && score <= 0) || index >= 20;
     Object.assign(next, { score, hits: (state.hits ?? 0) + hits, dartsThrown: (state.dartsThrown ?? 0) + 3, targetIndex: completed ? index : index + 1, target: completed ? "Fertig" : index + 1 < 20 ? `D${index + 2}` : "DBull", completed });
     return result(exercise, next, { ...visitValue, hits, doubleValue, missPenalty, scoreAfter: score }, score);
   }
 
-  if (state.kind.startsWith("AROUND_") || state.kind === "TARGET_SEQUENCE") {
-    const hits = Math.max(0, Math.min(3, Math.trunc(number(raw.hits))));
-    const fallbackCount = state.kind === "AROUND_TREBLES" ? 20 : 21;
-    const sequence = targets.length ? targets : Array.from({ length: fallbackCount }, (_, index) => index < 20 ? `${state.kind === "AROUND_DOUBLES" ? "D" : state.kind === "AROUND_TREBLES" ? "T" : ""}${index + 1}` : "BULL");
-    const advance = hits > 0 ? Math.max(1, Math.min(hits, sequence.length - (state.targetIndex ?? 0))) : 0;
-    const targetIndex = (state.targetIndex ?? 0) + advance;
+  if (state.kind.startsWith("AROUND_") || state.kind === "AROUND_SEQUENCE") {
+    const hits = Math.max(0, Math.min(dartsPerVisit, integer(raw.hits)));
+    const fallback = Array.from({ length: 21 }, (_, index) => index < 20 ? index + 1 : "BULL");
+    const sequence = targets.length ? targets : fallback;
+    const targetIndex = (state.targetIndex ?? 0) + (hits > 0 ? 1 : 0);
     const completed = targetIndex >= sequence.length;
-    Object.assign(next, { targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, hits: (state.hits ?? 0) + hits, score: (state.score ?? 0) + hits, dartsThrown: (state.dartsThrown ?? 0) + 3 });
-    return result(exercise, next, { ...visitValue, hits, targetAfter: next.target }, targetIndex);
+    Object.assign(next, { targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, hits: (state.hits ?? 0) + hits, score: (state.score ?? 0) + (hits > 0 ? 1 : 0), dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, hits, advanced: hits > 0, targetAfter: next.target }, hits > 0 ? 1 : 0);
+  }
+
+  if (state.kind === "TARGET_SEQUENCE") {
+    const { single, double, triple, hits } = segmentCounts(raw, dartsPerVisit);
+    const sequence = targets.length ? targets : [state.target];
+    const currentTarget = sequence[state.targetIndex ?? 0] ?? state.target;
+    const visitScore = targetSegmentScore(currentTarget, single, double, triple);
+    const targetIndex = (state.targetIndex ?? 0) + 1;
+    const completed = targetIndex >= sequence.length;
+    Object.assign(next, { score: (state.score ?? 0) + visitScore, hits: (state.hits ?? 0) + hits, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, single, double, triple, hits, visitScore }, visitScore);
   }
 
   if (state.kind === "GAME_121") {
     const currentTarget = Math.max(2, number(state.target, number(config.startTarget, 121)));
     const baseTarget = Math.max(2, state.baseTarget ?? currentTarget);
     const before = state.score ?? currentTarget;
-    const scored = Math.max(0, Math.min(180, Math.trunc(number(raw.score ?? raw.value))));
-    const dartsUsed = Math.max(1, Math.min(3, Math.trunc(number(raw.dartsUsed, 3))));
+    const scored = Math.max(0, Math.min(180, integer(raw.score ?? raw.value)));
+    const dartsUsed = dartCount(raw, 3);
     const checkout = bool(raw.checkout);
     const calculatedRemaining = before - scored;
     const bust = calculatedRemaining < 0 || calculatedRemaining === 1 || (calculatedRemaining === 0 && !checkout);
@@ -206,116 +243,151 @@ export function applyVisit(exercise: ExerciseDefinition, state: PlayerExerciseSt
   }
 
   if (state.kind === "X01" || state.kind === "X01_CONFIGURED") {
-    const scored = Math.max(0, Math.min(180, Math.trunc(number(raw.score ?? raw.value))));
+    const scored = Math.max(0, Math.min(180, integer(raw.score ?? raw.value)));
     const before = state.score ?? number(config.startScore, 501);
     const inRule = String(config.inRule ?? "SINGLE");
     const outRule = String(config.outRule ?? "DOUBLE");
-    const opened = state.opened || inRule !== "DOUBLE" || bool(raw.doubleIn);
+    const opened = Boolean(state.opened) || inRule !== "DOUBLE" || bool(raw.doubleIn);
     const checkoutType = String(raw.checkoutType ?? (bool(raw.checkout) ? "DOUBLE" : "NONE"));
-    const validOut = outRule === "SINGLE" ? checkoutType !== "NONE" || bool(raw.checkout) : outRule === "MASTER" ? ["DOUBLE", "TREBLE"].includes(checkoutType) : checkoutType === "DOUBLE" || bool(raw.checkout);
+    const validOut = outRule === "SINGLE" ? checkoutType === "SINGLE" : outRule === "MASTER" ? ["DOUBLE", "TREBLE"].includes(checkoutType) : checkoutType === "DOUBLE";
     const remaining = opened ? before - scored : before;
-    const bust = opened && (remaining < 0 || (outRule === "DOUBLE" && remaining === 1) || (remaining === 0 && !validOut));
+    const impossibleRest = (outRule === "DOUBLE" || outRule === "MASTER") && remaining === 1;
+    const bust = opened && (remaining < 0 || impossibleRest || (remaining === 0 && !validOut));
     const score = bust ? before : remaining;
     const completed = opened && score === 0 && validOut;
-    Object.assign(next, { score, target: String(score), opened, completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
-    return result(exercise, next, { ...visitValue, scored, bust, remaining: score, checkoutType, opened }, scored);
+    Object.assign(next, { score, target: String(score), opened, completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, scored, bust, remaining: score, checkoutType, opened, validOut }, scored);
   }
 
   if (["SHANGHAI", "SHANGHAI_CONFIGURED"].includes(state.kind)) {
-    const single = Math.max(0, Math.min(3, Math.trunc(number(raw.single))));
-    const double = Math.max(0, Math.min(3, Math.trunc(number(raw.double))));
-    const triple = Math.max(0, Math.min(3, Math.trunc(number(raw.triple))));
-    const targetNumber = number(state.target, 0);
-    const roundScore = targetNumber * (single + double * 2 + triple * 3);
-    const shanghai = single > 0 && double > 0 && triple > 0;
+    const { single, double, triple, hits } = segmentCounts(raw, dartsPerVisit);
     const sequence = targets.length ? targets : [1, 2, 3, 4, 5, 6, 7];
+    const currentTarget = sequence[state.targetIndex ?? 0] ?? state.target;
+    const roundScore = targetSegmentScore(currentTarget, single, double, triple);
+    const shanghai = String(currentTarget).toUpperCase() !== "BULL" && single > 0 && double > 0 && triple > 0;
     const targetIndex = (state.targetIndex ?? 0) + 1;
     const completed = (bool(config.instantShanghai) && shanghai) || targetIndex >= sequence.length;
-    Object.assign(next, { score: (state.score ?? 0) + roundScore, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
+    Object.assign(next, { score: (state.score ?? 0) + roundScore, hits: (state.hits ?? 0) + hits, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
     return result(exercise, next, { ...visitValue, single, double, triple, roundScore, shanghai }, roundScore);
   }
 
   if (["CHECKOUT_RANGE", "FIXED_CHECKOUT", "RANDOM_CHECKOUT"].includes(state.kind)) {
     const checkout = bool(raw.checkout);
-    const dartsUsed = Math.max(1, Math.trunc(number(raw.dartsUsed, 3)));
+    const dartsUsed = dartCount(raw, 3);
     const sequence = targets.length ? targets : [config.target ?? state.target];
     const currentIndex = state.targetIndex ?? 0;
     const maxDarts = number(config.maxDarts, 6);
     const attemptDarts = (state.attemptDarts ?? 0) + dartsUsed;
+    const scoring = config.scoring && typeof config.scoring === "object" && !Array.isArray(config.scoring) ? config.scoring as Record<string, unknown> : {};
     let points = 0;
-    if (checkout) points = dartsUsed <= 2 ? 3 : dartsUsed <= 3 ? 2 : 1;
+    if (checkout) {
+      if (dartsUsed <= 2) points = number(scoring.two, 3);
+      else if (dartsUsed === 3) points = number(scoring.three, state.kind === "CHECKOUT_RANGE" ? 2 : 1);
+      else points = number(scoring.six, 1);
+    }
     const moveNext = checkout || attemptDarts >= maxDarts;
-    const targetIndex = moveNext ? currentIndex + 1 : currentIndex;
-    const completed = targetIndex >= sequence.length || (state.kind === "FIXED_CHECKOUT" && moveNext && number(config.rounds, 1) <= (state.attempts ?? 0) + 1);
-    const nextTarget = state.kind === "RANDOM_CHECKOUT" && moveNext ? Math.floor(Math.random() * (number(config.max, 170) - number(config.min, 2) + 1)) + number(config.min, 2) : sequence[targetIndex] ?? state.target;
-    Object.assign(next, { score: (state.score ?? 0) + points, targetIndex, target: completed ? "Fertig" : targetLabel(nextTarget), attemptDarts: moveNext ? 0 : attemptDarts, attempts: (state.attempts ?? 0) + (moveNext ? 1 : 0), successes: (state.successes ?? 0) + (checkout ? 1 : 0), dartsThrown: (state.dartsThrown ?? 0) + dartsUsed, completed });
-    return result(exercise, next, { ...visitValue, checkout, dartsUsed, points, attemptDarts }, points);
+    const attemptNumber = (state.attempts ?? 0) + (moveNext ? 1 : 0);
+    const configuredRounds = Math.max(1, integer(config.rounds, 1));
+    const sequenceFinished = state.kind === "CHECKOUT_RANGE" && currentIndex + (moveNext ? 1 : 0) >= sequence.length;
+    const fixedFinished = state.kind === "FIXED_CHECKOUT" && moveNext && attemptNumber >= configuredRounds;
+    const targetIndex = moveNext && state.kind === "CHECKOUT_RANGE" ? currentIndex + 1 : currentIndex;
+    const completed = sequenceFinished || fixedFinished;
+    const nextTarget = state.kind === "RANDOM_CHECKOUT" && moveNext
+      ? Math.floor(Math.random() * (number(config.max, 170) - number(config.min, 2) + 1)) + number(config.min, 2)
+      : sequence[targetIndex] ?? state.target;
+    Object.assign(next, { score: (state.score ?? 0) + points, targetIndex, target: completed ? "Fertig" : targetLabel(nextTarget), attemptDarts: moveNext ? 0 : attemptDarts, attempts: attemptNumber, successes: (state.successes ?? 0) + (checkout ? 1 : 0), dartsThrown: (state.dartsThrown ?? 0) + dartsUsed, completed });
+    return result(exercise, next, { ...visitValue, checkout, dartsUsed, points, attemptDarts, attemptNumber }, points);
   }
 
-  if (["SEGMENT_POINTS", "SWITCH", "BASEBALL", "TARGET_SEQUENCE", "HALVE_IT"].includes(state.kind)) {
-    const single = Math.max(0, Math.min(3, Math.trunc(number(raw.single))));
-    const double = Math.max(0, Math.min(3, Math.trunc(number(raw.double))));
-    const triple = Math.max(0, Math.min(3, Math.trunc(number(raw.triple))));
-    const hits = Math.max(0, Math.min(3, Math.trunc(number(raw.hits, single + double + triple))));
-    const visitScore = number(raw.score, single + double * 2 + triple * 3 || hits);
-    const missed = hits === 0 && visitScore === 0;
+  if (state.kind === "SEGMENT_POINTS") {
+    const { single, double, triple, hits } = segmentCounts(raw, dartsPerVisit);
+    const target = config.target ?? state.target;
+    const points = bool(config.bull) ? single + double * 2 : single + double * 2 + triple * 3;
+    Object.assign(next, { score: (state.score ?? 0) + points, hits: (state.hits ?? 0) + hits, target: targetLabel(target), dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, single, double, triple, hits, points }, points);
+  }
+
+  if (["HALVE_IT", "BASEBALL"].includes(state.kind)) {
+    const { single, double, triple, hits } = segmentCounts(raw, dartsPerVisit);
+    const sequence = targets.length ? targets : [state.target];
+    const currentTarget = sequence[state.targetIndex ?? 0] ?? state.target;
+    const visitScore = state.kind === "BASEBALL" ? single + double * 2 + triple * 3 : targetSegmentScore(currentTarget, single, double, triple);
+    const missed = hits === 0;
     let score = (state.score ?? 0) + visitScore;
     if (state.kind === "HALVE_IT" && missed) score = String(config.missPenalty ?? "HALVE") === "RESET" ? 0 : Math.floor((state.score ?? 0) / 2);
-    const sequence = targets.length ? targets : [config.target ?? state.target];
-    const targetIndex = Math.min(sequence.length, (state.targetIndex ?? 0) + 1);
+    const targetIndex = (state.targetIndex ?? 0) + 1;
     const completed = targetIndex >= sequence.length;
-    Object.assign(next, { score, hits: (state.hits ?? 0) + hits, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
+    Object.assign(next, { score, hits: (state.hits ?? 0) + hits, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
     return result(exercise, next, { ...visitValue, single, double, triple, hits, visitScore, missed }, visitScore);
   }
 
+  if (state.kind === "SWITCH") {
+    const { single, double, triple, hits } = segmentCounts(raw, dartsPerVisit);
+    const points = single + double * 2 + triple * 3;
+    Object.assign(next, { score: (state.score ?? 0) + points, hits: (state.hits ?? 0) + hits, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit, target: state.visit % 2 === 1 ? `${targetLabel(targets[1])} / ${targetLabel(targets[0])}` : `${targetLabel(targets[0])} / ${targetLabel(targets[1])}` });
+    return result(exercise, next, { ...visitValue, single, double, triple, hits, points }, points);
+  }
+
   if (state.kind === "FIVES") {
-    const scored = Math.max(0, Math.min(180, Math.trunc(number(raw.score ?? raw.value))));
+    const scored = Math.max(0, Math.min(180, integer(raw.score ?? raw.value)));
     const points = scored % 5 === 0 ? scored / 5 : 0;
-    Object.assign(next, { score: (state.score ?? 0) + points, dartsThrown: (state.dartsThrown ?? 0) + 3, completed: bool(raw.finish) });
+    Object.assign(next, { score: (state.score ?? 0) + points, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit, completed: bool(raw.finish) });
     return result(exercise, next, { ...visitValue, scored, points }, points);
   }
 
   if (state.kind === "CRICKET") {
     const target = String(raw.target ?? state.target ?? "20");
-    const marksAdded = Math.max(0, Math.min(3, Math.trunc(number(raw.marks ?? raw.hits))));
+    const marksAdded = Math.max(0, Math.min(3, integer(raw.marks ?? raw.hits)));
     const marks = { ...(state.marks ?? {}) };
-    marks[target] = Math.min(3, (marks[target] ?? 0) + marksAdded);
-    const completed = Object.values(marks).every((value) => value >= 3) || bool(raw.finish);
-    Object.assign(next, { marks, score: (state.score ?? 0) + number(raw.points), target, completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
-    return result(exercise, next, { ...visitValue, target, marksAdded, marks }, marksAdded);
+    const previousMarks = marks[target] ?? 0;
+    const overflowMarks = Math.max(0, previousMarks + marksAdded - 3);
+    marks[target] = Math.min(3, previousMarks + marksAdded);
+    const variant = String(config.variant ?? "STANDARD");
+    const targetValue = target.toUpperCase() === "BULL" ? 25 : number(target, 0);
+    const manualPoints = Math.max(0, integer(raw.points));
+    const scoredPoints = variant === "NO_SCORE" ? 0 : manualPoints || overflowMarks * targetValue;
+    const allClosed = Object.values(marks).every((value) => value >= 3);
+    const score = (state.score ?? 0) + scoredPoints;
+    const completed = bool(raw.finish) || (variant === "NO_SCORE" && allClosed) || (variant === "RACE_200" && score >= 200);
+    Object.assign(next, { marks, score, target, completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, target, marksAdded, overflowMarks, scoredPoints, marks }, scoredPoints);
   }
 
   if (state.kind === "KILLER") {
-    const livesDelta = Math.trunc(number(raw.livesDelta));
+    const livesDelta = integer(raw.livesDelta);
     const lives = Math.max(0, (state.lives ?? number(config.startLives, 3)) + livesDelta);
     const phase = bool(raw.killer) ? "KILLER" : state.phase;
     const completed = lives <= 0 || bool(raw.finish);
-    Object.assign(next, { lives, phase, completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
+    Object.assign(next, { lives, phase, completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
     return result(exercise, next, { ...visitValue, livesDelta, lives, phase }, lives);
   }
 
   if (state.kind === "COUNT_UP") {
-    const scored = Math.max(0, Math.min(180, Math.trunc(number(raw.score ?? raw.value))));
+    const scored = Math.max(0, Math.min(180, integer(raw.score ?? raw.value)));
     const target = number(config.target, 301);
     const total = (state.score ?? 0) + scored;
     const bust = total > target;
     const score = bust ? state.score ?? 0 : total;
     const completed = score === target || bool(raw.finish);
-    Object.assign(next, { score, completed, dartsThrown: (state.dartsThrown ?? 0) + 3 });
+    Object.assign(next, { score, completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
     return result(exercise, next, { ...visitValue, scored, bust, score }, scored);
   }
 
   if (state.kind === "TIC_TAC_TOE") {
     const target = String(raw.target ?? "");
     const marks = { ...(state.marks ?? {}) };
-    if (target) marks[target] = 1;
-    Object.assign(next, { marks, score: Object.keys(marks).length, completed: bool(raw.finish), dartsThrown: (state.dartsThrown ?? 0) + 3 });
-    return result(exercise, next, { ...visitValue, target, marks }, target ? 1 : 0);
+    if (target && marks[target] == null) marks[target] = 1;
+    const gridTargets = targets.map(String);
+    const occupied = new Set(Object.keys(marks));
+    const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    const won = lines.some((line) => line.every((index) => occupied.has(gridTargets[index])));
+    Object.assign(next, { marks, score: Object.keys(marks).length, completed: won || bool(raw.finish), dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
+    return result(exercise, next, { ...visitValue, target, marks, won }, target ? 1 : 0);
   }
 
-  const hits = raw.hits == null ? undefined : Math.max(0, Math.min(3, Math.trunc(number(raw.hits))));
+  const hits = raw.hits == null ? undefined : Math.max(0, Math.min(dartsPerVisit, integer(raw.hits)));
   const score = number(raw.score ?? raw.value ?? hits);
   const finish = bool(raw.finish);
-  Object.assign(next, { score: (state.score ?? 0) + score, hits: (state.hits ?? 0) + (hits ?? 0), dartsThrown: (state.dartsThrown ?? 0) + 3, attempts: (state.attempts ?? 0) + 1, completed: finish });
+  Object.assign(next, { score: (state.score ?? 0) + score, hits: (state.hits ?? 0) + (hits ?? 0), dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit, attempts: (state.attempts ?? 0) + 1, completed: finish });
   return result(exercise, next, { ...visitValue, score, hits, finish }, score);
 }
