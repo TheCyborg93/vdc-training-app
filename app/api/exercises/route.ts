@@ -1,7 +1,7 @@
 import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultExercises } from "@/lib/default-exercises";
+import { ensureDefaultExercises, syncExerciseCatalog } from "@/lib/default-exercises";
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -23,19 +23,15 @@ export async function GET() {
   try {
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
-        orderBy: [{ favorite: "desc" }, { active: "desc" }, { name: "asc" }],
+        orderBy: [{ active: "desc" }, { trainerNotes: "asc" }, { name: "asc" }],
         include: { categories: { include: { category: true } } },
       }),
       prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } }),
     ]);
-
     return NextResponse.json({ exercises, categories });
   } catch (error) {
     console.error("Exercise GET failed", error);
-    return NextResponse.json(
-      { error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." }, { status: 500 });
   }
 }
 
@@ -45,7 +41,15 @@ export async function POST(request: Request) {
 
     if (body.action === "sync-defaults") {
       const added = await ensureDefaultExercises(prisma);
-      return NextResponse.json({ added, message: `${added} fehlende Standardübungen wurden ergänzt.` });
+      return NextResponse.json({ added, message: `${added} fehlende Katalogübungen wurden ergänzt.` });
+    }
+
+    if (body.action === "replace-catalog") {
+      const result = await syncExerciseCatalog(prisma);
+      return NextResponse.json({
+        ...result,
+        message: `Katalog synchronisiert: ${result.created} erstellt, ${result.updated} aktualisiert, ${result.deleted} Altübungen gelöscht und ${result.deactivated} historische Altübungen deaktiviert.`,
+      });
     }
 
     const name = String(body.name ?? "").trim();
@@ -85,6 +89,7 @@ export async function POST(request: Request) {
           engine: String(body.engine ?? "AUTO") as ExerciseEngine,
           completionMode: mode,
           completionValue: limit,
+          resultConfigJson: body.resultConfigJson ?? undefined,
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
@@ -93,20 +98,15 @@ export async function POST(request: Request) {
       });
 
       for (const categoryName of categoryNames) {
-        const category = await tx.exerciseCategory.upsert({
-          where: { name: categoryName },
-          update: {},
-          create: { name: categoryName },
-        });
+        const category = await tx.exerciseCategory.upsert({ where: { name: categoryName }, update: {}, create: { name: categoryName } });
         await tx.exerciseCategoryLink.create({ data: { exerciseId: created.id, categoryId: category.id } });
       }
-
       return created;
     });
 
     return NextResponse.json(exercise, { status: 201 });
   } catch (error) {
     console.error("Exercise POST failed", error);
-    return NextResponse.json({ error: "Übung konnte nicht gespeichert werden." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Übung konnte nicht gespeichert werden." }, { status: 500 });
   }
 }
