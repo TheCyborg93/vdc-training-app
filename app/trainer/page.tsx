@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import TrainingCountdown from "@/components/dashboard/training-countdown";
+import { DashboardActivity, DashboardBoardWall } from "@/components/dashboard/dashboard-live-panels";
 
 export const dynamic = "force-dynamic";
 export const preferredRegion = "lhr1";
@@ -108,6 +109,22 @@ export default async function TrainerPage() {
   const exerciseNames = new Map(
     currentTraining?.trainingPlan.exercises.map((item) => [item.exerciseId, item.exercise.name]) ?? [],
   );
+  const initialBoards = currentTraining?.boards.map((entry) => {
+    const session = currentTraining.sessions.find((item) => item.boardId === entry.boardId);
+    return {
+      boardId: entry.boardId,
+      name: entry.board.name,
+      status: session?.status ?? "NOT_STARTED",
+      exerciseName: session?.currentExerciseId ? exerciseNames.get(session.currentExerciseId) ?? null : null,
+    };
+  }) ?? [];
+  const initialResults = recentResults.slice(0, 6).map((item) => ({
+    id: item.id,
+    playerName: item.player.displayName,
+    exerciseName: item.exercise.name,
+    calculatedScore: item.calculatedScore,
+    createdAt: item.createdAt.toISOString(),
+  }));
 
   return (
     <main className="vdc-dashboard-page vdc-dashboard-v3">
@@ -195,37 +212,12 @@ export default async function TrainerPage() {
           )}
         </article>
 
-        <aside className="vdc-v3-board-wall">
-          <header>
-            <div><span className="vdc-kicker">Live Monitor</span><h2>Board Wall</h2></div>
-            <strong>{runningBoards} live</strong>
-          </header>
-          <div className="vdc-v3-board-list">
-            {currentTraining?.boards.map((entry) => {
-              const session = currentTraining.sessions.find((item) => item.boardId === entry.boardId);
-              const status = session?.status ?? "NOT_STARTED";
-              const currentExerciseName = session?.currentExerciseId
-                ? exerciseNames.get(session.currentExerciseId)
-                : undefined;
-              return (
-                <div key={entry.boardId} className={`is-${status.toLowerCase()}`}>
-                  <span className={`vdc-board-dot is-${status.toLowerCase()}`} />
-                  <div>
-                    <strong>{entry.board.name}</strong>
-                    <small>{currentExerciseName ?? statusLabel(status)}</small>
-                  </div>
-                  <b>{status === "RUNNING" ? "LIVE" : statusLabel(status)}</b>
-                </div>
-              );
-            })}
-            {!currentTraining && <div className="vdc-empty-line">Noch keine Boards zugewiesen.</div>}
-          </div>
-          <div className="vdc-v3-board-summary">
-            <span>{occupiedBoards} belegt</span>
-            <span>{completedBoards} abgeschlossen</span>
-          </div>
-          <Link className="vdc-text-link" href="/trainer/live">Live Center öffnen →</Link>
-        </aside>
+        <DashboardBoardWall
+          initialBoards={initialBoards}
+          initialRunningBoards={runningBoards}
+          initialOccupiedBoards={occupiedBoards}
+          initialCompletedBoards={completedBoards}
+        />
       </section>
 
       <section className="vdc-v3-section">
@@ -256,19 +248,7 @@ export default async function TrainerPage() {
           <Link className="button secondary" href="/trainer/ai-coach">Coach öffnen</Link>
         </article>
 
-        <article className="vdc-v3-activity-card">
-          <header className="vdc-section-heading"><div><span className="vdc-kicker">Aktivität</span><h2>Letzte Ergebnisse</h2></div></header>
-          <div className="vdc-result-list">
-            {recentResults.slice(0, 6).map((item) => (
-              <div key={item.id}>
-                <div><strong>{item.player.displayName}</strong><small>{item.exercise.name}</small></div>
-                <time>{new Date(item.createdAt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
-                <b>{item.calculatedScore ?? "–"}</b>
-              </div>
-            ))}
-            {recentResults.length === 0 && <div className="vdc-empty-line">Noch keine Ergebnisse vorhanden.</div>}
-          </div>
-        </article>
+        <DashboardActivity initialResults={initialResults} />
 
         <article className="vdc-v3-planning-card">
           <header className="vdc-section-heading"><div><span className="vdc-kicker">Planung</span><h2>Arbeitsstand</h2></div></header>
