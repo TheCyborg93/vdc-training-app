@@ -1,4 +1,6 @@
-export type EngineInputMode = "HITS" | "SEGMENTS" | "SCORE" | "CHECKOUT" | "X01" | "CRICKET" | "KILLER" | "BOARD_GAME" | "CUSTOM";
+import { engineV3Profile, type EngineV3InputMode } from "@/lib/exercise-engine-v3";
+
+export type EngineInputMode = EngineV3InputMode;
 
 export type EngineDefinition = {
   kind: string;
@@ -10,6 +12,9 @@ export type EngineDefinition = {
   supportsFinish?: boolean;
   supportsUndo: boolean;
   sharedGame: boolean;
+  pluginId?: string;
+  liveMetrics?: string[];
+  coachSignals?: string[];
 };
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -23,26 +28,29 @@ function finiteNumber(value: unknown, fallback: number): number {
 
 export function engineDefinition(kind: string, configValue?: unknown): EngineDefinition {
   const config = objectValue(configValue);
-  const dartsPerVisit = Math.max(1, Math.min(9, Math.trunc(finiteNumber(config.dartsPerVisit, 3))));
-  const sharedGame = config.sharedGame === true;
+  const plugin = engineV3Profile(kind, config);
+  const definition: EngineDefinition = {
+    kind,
+    inputMode: plugin.inputMode,
+    dartsPerVisit: plugin.dartsPerVisit,
+    supportsUndo: true,
+    sharedGame: plugin.sharedGame,
+    pluginId: plugin.id,
+    liveMetrics: plugin.liveMetrics,
+    coachSignals: plugin.coachSignals,
+  };
 
-  if (["BOB27", "BOB27_CONFIGURED", "AROUND_CLOCK", "AROUND_DOUBLES", "AROUND_TREBLES", "AROUND_SEQUENCE", "HIT_ROUNDS", "HIT_TARGET"].includes(kind)) {
-    return { kind, inputMode: "HITS", dartsPerVisit, supportsUndo: true, sharedGame };
+  if (plugin.inputMode === "SCORE" || plugin.inputMode === "X01") {
+    definition.minScore = 0;
+    definition.maxScore = 180;
   }
-  if (["SHANGHAI", "SHANGHAI_CONFIGURED", "SEGMENT_POINTS", "SWITCH", "BASEBALL", "TARGET_SEQUENCE", "HALVE_IT"].includes(kind)) {
-    return { kind, inputMode: "SEGMENTS", dartsPerVisit, supportsUndo: true, sharedGame };
+  if (plugin.inputMode === "CHECKOUT") {
+    definition.maxDarts = Math.max(1, Math.min(9, Math.trunc(finiteNumber(config.maxDarts ?? config.dartsPerAttempt, 3))));
   }
-  if (["X01", "X01_CONFIGURED"].includes(kind)) {
-    return { kind, inputMode: "X01", dartsPerVisit, minScore: 0, maxScore: 180, supportsUndo: true, sharedGame };
-  }
-  if (["GAME_121", "CHECKOUT_RANGE", "FIXED_CHECKOUT", "RANDOM_CHECKOUT"].includes(kind)) {
-    return { kind, inputMode: "CHECKOUT", dartsPerVisit, maxDarts: Math.max(1, Math.trunc(finiteNumber(config.maxDarts ?? config.dartsPerAttempt, 3))), supportsUndo: true, sharedGame };
-  }
-  if (kind === "CRICKET") return { kind, inputMode: "CRICKET", dartsPerVisit, supportsFinish: true, supportsUndo: true, sharedGame: true };
-  if (kind === "KILLER") return { kind, inputMode: "KILLER", dartsPerVisit, supportsFinish: true, supportsUndo: true, sharedGame: true };
-  if (["TIC_TAC_TOE", "CHASE_GAME"].includes(kind)) return { kind, inputMode: "BOARD_GAME", dartsPerVisit, supportsFinish: true, supportsUndo: true, sharedGame: true };
-  if (["SCORING", "FIVES", "COUNT_UP"].includes(kind)) return { kind, inputMode: "SCORE", dartsPerVisit, minScore: 0, maxScore: 180, supportsFinish: kind !== "SCORING", supportsUndo: true, sharedGame };
-  return { kind, inputMode: "CUSTOM", dartsPerVisit, supportsFinish: true, supportsUndo: true, sharedGame };
+  if (["CRICKET", "KILLER", "BOARD_GAME", "CUSTOM"].includes(plugin.inputMode)) definition.supportsFinish = true;
+  if (kind === "COUNT_UP" || kind === "FIVES") definition.supportsFinish = true;
+
+  return definition;
 }
 
 export function normalizeEngineVisit(kind: string, configValue: unknown, rawValue: unknown): Record<string, unknown> {
