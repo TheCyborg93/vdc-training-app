@@ -168,8 +168,11 @@ export default function TrainerLivePage() {
   const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [clock, setClock] = useState(new Date());
+  const [isTrainerMode, setIsTrainerMode] = useState(false);
+  const [pauseDismissed, setPauseDismissed] = useState(false);
   const trainingIdRef = useRef<number | null>(null);
   const trainingStatusRef = useRef<string | null>(null);
+  const cockpitRef = useRef<HTMLElement | null>(null);
 
   async function loadLiveData(silent = false) {
     try {
@@ -225,8 +228,13 @@ export default function TrainerLivePage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedBoardId(null); };
+    const onFullscreenChange = () => setIsTrainerMode(document.fullscreenElement === cockpitRef.current);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
   }, []);
 
   const summary = useMemo(() => {
@@ -255,6 +263,15 @@ export default function TrainerLivePage() {
     return { elapsed, remaining: Math.max(0, planned - elapsed), planned };
   }, [training, clock]);
 
+  const pace = useMemo(() => {
+    if (!timing.planned || !timing.elapsed) return { tone: "neutral", label: "Noch keine Zeitlage", detail: "Die Bewertung startet nach Trainingsbeginn." };
+    const expectedProgress = Math.min(100, Math.round((timing.elapsed / timing.planned) * 100));
+    const delta = summary.averageProgress - expectedProgress;
+    if (delta >= 10) return { tone: "ahead", label: "Vor dem Zeitplan", detail: `${Math.abs(delta)} Prozentpunkte Vorsprung` };
+    if (delta <= -10) return { tone: "behind", label: "Hinter dem Zeitplan", detail: `${Math.abs(delta)} Prozentpunkte Rückstand` };
+    return { tone: "ontime", label: "Im Zeitplan", detail: "Fortschritt und Planzeit passen zusammen" };
+  }, [summary.averageProgress, timing.elapsed, timing.planned]);
+
   const selectedBoard = training?.boards.find((board) => board.id === selectedBoardId) ?? null;
   const selectedIndex = selectedBoard && training ? training.boards.findIndex((board) => board.id === selectedBoard.id) : -1;
   const topBoard = useMemo(() => [...(training?.boards ?? [])].sort((a, b) => b.resultCount - a.resultCount)[0] ?? null, [training]);
@@ -267,6 +284,7 @@ export default function TrainerLivePage() {
         return priority[a.health.level] - priority[b.health.level];
       });
   }, [training, clock]);
+  const showSmartPause = timing.elapsed >= 60 && summary.running > 0 && summary.paused === 0 && !pauseDismissed;
 
   async function requestConfirmation(board: LiveBoard, action: ControlAction) {
     if (action === "finish_exercise") {
@@ -304,10 +322,25 @@ export default function TrainerLivePage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Sammelaktion fehlgeschlagen.");
       notify(data.message ?? "Sammelaktion ausgeführt.", { tone: "success" });
+      if (action === "pause_all") setPauseDismissed(true);
       await loadLiveData(true);
     } catch (error) {
       notify("Sammelaktion nicht möglich", { message: error instanceof Error ? error.message : "Unbekannter Fehler", tone: "error" });
     } finally { setBulkBusy(false); }
+  }
+
+  async function toggleTrainerMode() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (cockpitRef.current?.requestFullscreen) {
+        await cockpitRef.current.requestFullscreen();
+      } else {
+        notify("Vollbild nicht verfügbar", { message: "Der verwendete Browser unterstützt diesen Modus nicht.", tone: "warning" });
+      }
+    } catch {
+      notify("Trainermodus nicht möglich", { message: "Der Vollbildmodus konnte nicht gestartet werden.", tone: "error" });
+    }
   }
 
   function movePlayer(boardId: number, index: number, direction: -1 | 1) {
@@ -352,16 +385,18 @@ export default function TrainerLivePage() {
   }
 
   return (
-    <main className={`${styles.root} dashboard-page trainer-live-page trainer-cockpit-page`}>
+    <main ref={cockpitRef} className={`${styles.root} dashboard-page trainer-live-page trainer-cockpit-page ${isTrainerMode ? "is-trainer-mode" : ""}`}>
       <header className="vdc-page-heading trainer-live-heading">
         <div><span className="vdc-kicker">Trainersteuerung</span><h1>Live Center</h1><p>{training.trainingPlan.title} · {training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten</p></div>
-        <div className="trainer-live-refresh"><span><i />Automatische Aktualisierung</span><small>{lastUpdated ? `Stand ${lastUpdated.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Wird geladen"}</small><button className="button secondary" disabled={busyBoardId !== null || bulkBusy} onClick={() => void loadLiveData()}>Jetzt aktualisieren</button></div>
+        <div className="trainer-live-refresh"><span><i />Automatische Aktualisierung</span><small>{lastUpdated ? `Stand ${lastUpdated.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Wird geladen"}</small><div className="trainer-live-heading-actions"><button className="button ghost" onClick={() => void toggleTrainerMode()}>{isTrainerMode ? "Trainermodus verlassen" : "Trainermodus"}</button><button className="button secondary" disabled={busyBoardId !== null || bulkBusy} onClick={() => void loadLiveData()}>Jetzt aktualisieren</button></div></div>
       </header>
       <section className="trainer-cockpit-overview">
         <article className="trainer-cockpit-progress"><div><span className="vdc-kicker">Training läuft</span><strong>{summary.averageProgress}%</strong><p>{summary.completed} von {training.boards.length} Boards abgeschlossen</p></div><div className="trainer-cockpit-bar"><span style={{ width: `${summary.averageProgress}%` }} /></div></article>
         <div className="trainer-cockpit-metrics"><article><small>Vergangene Zeit</small><strong>{timing.elapsed} Min.</strong><span>von {timing.planned} Minuten</span></article><article><small>Restzeit geplant</small><strong>{timing.remaining} Min.</strong><span>{timing.remaining === 0 && timing.elapsed > timing.planned ? "Planzeit überschritten" : "bis Planende"}</span></article><article><small>Offene Boards</small><strong>{training.boards.length - summary.completed}</strong><span>noch abzuschließen</span></article></div>
         <div className="trainer-cockpit-actions"><button className="button secondary" disabled={bulkBusy || summary.running === 0} onClick={() => void bulkControl("pause_all")}>Alle Boards pausieren</button><button className="button" disabled={bulkBusy || summary.paused === 0} onClick={() => void bulkControl("resume_all")}>Alle Boards fortsetzen</button></div>
       </section>
+      <section className={`trainer-pace-status is-${pace.tone}`}><div><span className="vdc-kicker">Zeitplan</span><strong>{pace.label}</strong><p>{pace.detail}</p></div><span>{summary.averageProgress}% Fortschritt · {timing.elapsed}/{timing.planned} Min.</span></section>
+      {showSmartPause && <section className="trainer-smart-pause"><div><span aria-hidden="true">Ⅱ</span><div><strong>Eine gemeinsame Pause wäre sinnvoll.</strong><p>Das Training läuft seit {timing.elapsed} Minuten. Der aktuelle Stand aller Boards bleibt beim Pausieren erhalten.</p></div></div><div><button className="button" disabled={bulkBusy} onClick={() => void bulkControl("pause_all")}>Pause starten</button><button className="button ghost" onClick={() => setPauseDismissed(true)}>Später erinnern</button></div></section>}
       <section className="trainer-live-summary"><article><small>Laufende Boards</small><strong>{summary.running}</strong><span>aktive Gruppen</span></article><article><small>Pausierte Boards</small><strong>{summary.paused}</strong><span>Stand gespeichert</span></article><article><small>Wartende Boards</small><strong>{summary.waiting}</strong><span>noch nicht gestartet</span></article><article><small>Abgeschlossen</small><strong>{summary.completed}</strong><span>fertige Boards</span></article><article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gespeicherte Einträge</span></article></section>
       {message && <p className="form-message trainer-live-message">{message}</p>}
       <section className="trainer-cockpit-layout">
