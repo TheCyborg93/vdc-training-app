@@ -6,10 +6,8 @@ export async function GET() {
     const plans = await prisma.trainingPlan.findMany({
       orderBy: { updatedAt: "desc" },
       include: {
-        exercises: {
-          orderBy: { position: "asc" },
-          include: { exercise: true },
-        },
+        exercises: { orderBy: { position: "asc" }, include: { exercise: true } },
+        trainingDays: { select: { id: true, status: true, trainingDate: true } },
       },
     });
     return NextResponse.json(plans);
@@ -32,11 +30,8 @@ export async function POST(request: Request) {
     }
 
     const normalizedItems = items.map((item: { exerciseId?: unknown; durationMin?: unknown }, index: number) => ({
-      exerciseId: Number(item.exerciseId),
-      durationMin: Number(item.durationMin),
-      position: index + 1,
+      exerciseId: Number(item.exerciseId), durationMin: Number(item.durationMin), position: index + 1,
     }));
-
     if (normalizedItems.some((item: { exerciseId: number; durationMin: number }) => !Number.isInteger(item.exerciseId) || !Number.isInteger(item.durationMin) || item.durationMin < 1)) {
       return NextResponse.json({ error: "Eine Übung enthält ungültige Werte." }, { status: 400 });
     }
@@ -44,32 +39,13 @@ export async function POST(request: Request) {
     const creator = await prisma.user.upsert({
       where: { email: "trainer@vdc-training.de" },
       update: { name: "VDC Trainer", active: true },
-      create: {
-        name: "VDC Trainer",
-        email: "trainer@vdc-training.de",
-        passwordHash: "SUPABASE_AUTH",
-        role: "TRAINER",
-        active: true,
-      },
+      create: { name: "VDC Trainer", email: "trainer@vdc-training.de", passwordHash: "SUPABASE_AUTH", role: "TRAINER", active: true },
     });
 
     const plan = await prisma.trainingPlan.create({
-      data: {
-        title,
-        goal,
-        durationMin,
-        status: "DRAFT",
-        createdById: creator.id,
-        exercises: { create: normalizedItems },
-      },
-      include: {
-        exercises: {
-          orderBy: { position: "asc" },
-          include: { exercise: true },
-        },
-      },
+      data: { title, goal, durationMin, status: "DRAFT", createdById: creator.id, exercises: { create: normalizedItems } },
+      include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } }, trainingDays: { select: { id: true, status: true, trainingDate: true } } },
     });
-
     return NextResponse.json(plan, { status: 201 });
   } catch (error) {
     console.error("Training plan POST failed", error);
