@@ -4,21 +4,65 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { engineDefinition } from "@/lib/exercise-engine-v2";
 
 type ExerciseState = {
-  kind?: string; visit?: number; score?: number; target?: string; targetIndex?: number; dartsThrown?: number; hits?: number;
-  startedAt?: number; deadlineAt?: number; completionMode?: string; completionValue?: number; baseTarget?: number;
-  attemptDarts?: number; highestTarget?: number; successes?: number; attempts?: number; engineConfig?: Record<string, unknown>;
-  marks?: Record<string, number>; lives?: number; phase?: string; opened?: boolean;
+  kind?: string;
+  visit?: number;
+  score?: number;
+  target?: string;
+  targetIndex?: number;
+  dartsThrown?: number;
+  hits?: number;
+  startedAt?: number;
+  deadlineAt?: number;
+  completionMode?: string;
+  completionValue?: number;
+  baseTarget?: number;
+  attemptDarts?: number;
+  highestTarget?: number;
+  successes?: number;
+  attempts?: number;
+  engineConfig?: Record<string, unknown>;
+  marks?: Record<string, number>;
+  lives?: number;
+  phase?: string;
+  opened?: boolean;
+  playerName?: string;
+  trainingName?: string;
 };
 
 type Feedback = { tone: "success" | "error"; title: string; detail: string } | null;
-type Props = { resultType: string; exerciseName: string; completionMode?: string | null; completionValue?: number | null; state?: ExerciseState | null; disabled?: boolean; onSubmit: (value: Record<string, unknown>) => Promise<void> | void };
 
-function formatTime(totalSeconds: number) { const seconds = Math.max(0, totalSeconds); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`; }
-function safeCount(value: string, maximum: number) { return Math.max(0, Math.min(maximum, Number(value) || 0)); }
+type Props = {
+  resultType: string;
+  exerciseName: string;
+  trainingName?: string;
+  playerName?: string;
+  targetDescription?: string;
+  completionMode?: string | null;
+  completionValue?: number | null;
+  state?: ExerciseState | null;
+  disabled?: boolean;
+  paused?: boolean;
+  onSubmit: (value: Record<string, unknown>) => Promise<void> | void;
+  onUndo?: () => Promise<void> | void;
+  onPause?: () => Promise<void> | void;
+  onFinish?: () => Promise<void> | void;
+};
+
+function formatTime(totalSeconds: number) {
+  const seconds = Math.max(0, totalSeconds);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function safeCount(value: string, maximum: number) {
+  return Math.max(0, Math.min(maximum, Number(value) || 0));
+}
+
 function payloadSummary(payload: Record<string, unknown>) {
   if (typeof payload.score === "number") return `${payload.score} Punkte gespeichert`;
   if (typeof payload.hits === "number") return `${payload.hits} Treffer gespeichert`;
-  if (typeof payload.checkout === "boolean") return payload.checkout ? `Checkout in ${payload.dartsUsed ?? "–"} Darts` : "Versuch ohne Checkout gespeichert";
+  if (typeof payload.checkout === "boolean") {
+    return payload.checkout ? `Checkout in ${payload.dartsUsed ?? "–"} Darts` : "Versuch ohne Checkout gespeichert";
+  }
   if (typeof payload.marks === "number") return `${payload.marks} Marken gespeichert`;
   if (typeof payload.livesDelta === "number") return `Leben ${payload.livesDelta > 0 ? "+" : ""}${payload.livesDelta}`;
   if (typeof payload.target === "string") return `Ziel ${payload.target} gespeichert`;
@@ -26,61 +70,766 @@ function payloadSummary(payload: Record<string, unknown>) {
   return "Eingabe erfolgreich gespeichert";
 }
 
-export default function ExerciseResultInput({ resultType, exerciseName, completionMode: configuredMode, completionValue: configuredValue, state, disabled = false, onSubmit }: Props) {
+export default function ExerciseResultInput({
+  resultType,
+  exerciseName,
+  trainingName,
+  playerName,
+  targetDescription,
+  completionMode: configuredMode,
+  completionValue: configuredValue,
+  state,
+  disabled = false,
+  paused = false,
+  onSubmit,
+  onUndo,
+  onPause,
+  onFinish,
+}: Props) {
   const [score, setScore] = useState("");
-  const [single, setSingle] = useState(0); const [double, setDouble] = useState(0); const [triple, setTriple] = useState(0);
-  const [checkout, setCheckout] = useState(false); const [checkoutType, setCheckoutType] = useState("NONE"); const [doubleIn, setDoubleIn] = useState(false); const [dartsUsed, setDartsUsed] = useState(1);
-  const [target, setTarget] = useState(""); const [marks, setMarks] = useState(0); const [points, setPoints] = useState(0); const [now, setNow] = useState(() => Date.now());
-  const [submitting, setSubmitting] = useState(false); const [feedback, setFeedback] = useState<Feedback>(null);
-  const timeoutSent = useRef(false); const feedbackTimer = useRef<number | null>(null);
-  const kind = state?.kind ?? "CUSTOM"; const config = state?.engineConfig ?? {}; const definition = engineDefinition(kind, config);
-  const completionMode = configuredMode ?? state?.completionMode ?? "ENGINE_DEFAULT"; const completionValue = configuredValue ?? state?.completionValue ?? null;
-  const remainingSeconds = useMemo(() => completionMode === "TIME_LIMIT" && state?.deadlineAt ? Math.max(0, Math.ceil((state.deadlineAt - now) / 1000)) : null, [completionMode, state?.deadlineAt, now]);
-  const usedDarts = single + double + triple; const locked = disabled || submitting;
+  const [single, setSingle] = useState(0);
+  const [double, setDouble] = useState(0);
+  const [triple, setTriple] = useState(0);
+  const [checkout, setCheckout] = useState(false);
+  const [checkoutType, setCheckoutType] = useState("NONE");
+  const [doubleIn, setDoubleIn] = useState(false);
+  const [dartsUsed, setDartsUsed] = useState(1);
+  const [target, setTarget] = useState("");
+  const [marks, setMarks] = useState(0);
+  const [points, setPoints] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [submitting, setSubmitting] = useState(false);
+  const [actionBusy, setActionBusy] = useState<"undo" | "pause" | "finish" | null>(null);
+  const [feedback, setFeedback] = useState<Feedback>(null);
+  const [successPulse, setSuccessPulse] = useState(false);
 
-  function resetEntry() { setScore(""); setSingle(0); setDouble(0); setTriple(0); setCheckout(false); setCheckoutType("NONE"); setDoubleIn(false); setDartsUsed(1); setMarks(0); setPoints(0); }
-  function showFeedback(next: Feedback) { setFeedback(next); if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current); feedbackTimer.current = window.setTimeout(() => setFeedback(null), next?.tone === "error" ? 6000 : 2800); }
+  const timeoutSent = useRef(false);
+  const feedbackTimer = useRef<number | null>(null);
+  const scoreInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => { timeoutSent.current = false; }, [state?.deadlineAt, state?.visit]);
-  useEffect(() => { resetEntry(); setFeedback(null); }, [state?.visit, state?.target]);
-  useEffect(() => { if (completionMode !== "TIME_LIMIT" || !state?.deadlineAt) return; const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, [completionMode, state?.deadlineAt]);
-  useEffect(() => { if (remainingSeconds !== 0 || timeoutSent.current || disabled) return; timeoutSent.current = true; void onSubmit({ timedOut: true, finish: true }); }, [remainingSeconds, disabled, onSubmit]);
-  useEffect(() => () => { if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current); }, []);
+  const kind = state?.kind ?? "CUSTOM";
+  const config = state?.engineConfig ?? {};
+  const definition = engineDefinition(kind, config);
+  const completionMode = configuredMode ?? state?.completionMode ?? "ENGINE_DEFAULT";
+  const completionValue = configuredValue ?? state?.completionValue ?? null;
+  const remainingSeconds = useMemo(
+    () =>
+      completionMode === "TIME_LIMIT" && state?.deadlineAt
+        ? Math.max(0, Math.ceil((state.deadlineAt - now) / 1000))
+        : null,
+    [completionMode, state?.deadlineAt, now],
+  );
+  const usedDarts = single + double + triple;
+  const locked = disabled || paused || submitting || actionBusy !== null;
+
+  function resetEntry() {
+    setScore("");
+    setSingle(0);
+    setDouble(0);
+    setTriple(0);
+    setCheckout(false);
+    setCheckoutType("NONE");
+    setDoubleIn(false);
+    setDartsUsed(1);
+    setMarks(0);
+    setPoints(0);
+  }
+
+  function showFeedback(next: Feedback) {
+    setFeedback(next);
+    if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = window.setTimeout(() => setFeedback(null), next?.tone === "error" ? 6000 : 2800);
+  }
+
+  useEffect(() => {
+    timeoutSent.current = false;
+  }, [state?.deadlineAt, state?.visit]);
+
+  useEffect(() => {
+    resetEntry();
+    setFeedback(null);
+  }, [state?.visit, state?.target]);
+
+  useEffect(() => {
+    if (completionMode !== "TIME_LIMIT" || !state?.deadlineAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [completionMode, state?.deadlineAt]);
+
+  useEffect(() => {
+    if (remainingSeconds !== 0 || timeoutSent.current || disabled) return;
+    timeoutSent.current = true;
+    void onSubmit({ timedOut: true, finish: true });
+  }, [remainingSeconds, disabled, onSubmit]);
+
+  useEffect(
+    () => () => {
+      if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
+    },
+    [],
+  );
 
   async function dispatch(payload: Record<string, unknown>, reset = true) {
     if (locked) return;
-    setSubmitting(true); setFeedback(null);
+    setSubmitting(true);
+    setFeedback(null);
     try {
       await onSubmit(payload);
       showFeedback({ tone: "success", title: "Gespeichert", detail: payloadSummary(payload) });
+      setSuccessPulse(true);
+      window.setTimeout(() => setSuccessPulse(false), 520);
       if (reset && !payload.finish) resetEntry();
+      window.requestAnimationFrame(() => scoreInputRef.current?.focus());
     } catch (error) {
-      showFeedback({ tone: "error", title: "Nicht gespeichert", detail: error instanceof Error ? error.message : "Bitte Eingabe prüfen und erneut versuchen." });
-    } finally { setSubmitting(false); }
+      showFeedback({
+        tone: "error",
+        title: "Nicht gespeichert",
+        detail: error instanceof Error ? error.message : "Bitte Eingabe prüfen und erneut versuchen.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  async function submitScore(extra: Record<string, unknown> = {}) { if (score === "") return; await dispatch({ score: Number(score), ...extra }); }
-  async function submitSegments() { if (usedDarts > definition.dartsPerVisit) return; await dispatch({ single, double, triple, hits: usedDarts }); }
+  async function runAction(type: "undo" | "pause" | "finish", callback?: () => Promise<void> | void) {
+    if (locked) return;
+    if (!callback) {
+      if (type === "undo") {
+        resetEntry();
+        showFeedback({ tone: "success", title: "Zurückgesetzt", detail: "Die aktuelle Eingabe wurde verworfen." });
+      }
+      return;
+    }
+    setActionBusy(type);
+    try {
+      await callback();
+    } catch (error) {
+      showFeedback({
+        tone: "error",
+        title: "Aktion fehlgeschlagen",
+        detail: error instanceof Error ? error.message : "Bitte erneut versuchen.",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }
 
-  const usedVisits = Math.max(0, (state?.visit ?? 1) - 1); const limitCurrent = completionMode === "VISIT_LIMIT" ? usedVisits : completionMode === "DART_LIMIT" ? state?.dartsThrown ?? 0 : null;
-  const limitPanel = (completionMode === "TIME_LIMIT" || limitCurrent != null) && completionValue ? <div className={`competition-limit ${remainingSeconds != null && remainingSeconds <= 30 ? "is-urgent" : ""}`}><div className="competition-limit-copy"><small>{completionMode === "TIME_LIMIT" ? "Verbleibende Zeit" : completionMode === "DART_LIMIT" ? "Darts" : "Aufnahmen"}</small><strong>{completionMode === "TIME_LIMIT" ? formatTime(remainingSeconds ?? completionValue * 60) : `${limitCurrent} / ${completionValue}`}</strong></div></div> : null;
-  const feedbackPanel = feedback ? <div className={`engine-v4-feedback is-${feedback.tone}`} role="status" aria-live="polite"><span aria-hidden="true">{feedback.tone === "success" ? "✓" : "!"}</span><div><strong>{feedback.title}</strong><p>{feedback.detail}</p></div></div> : null;
-  const segmentInput = <><div className="segment-entry">{[["Single", single, setSingle], ["Doppel", double, setDouble], ["Treble", triple, setTriple]].map(([label, value, setter]) => <label key={String(label)}><span>{String(label)}</span><div className="engine-stepper"><button type="button" disabled={locked || Number(value) <= 0} onClick={() => (setter as (value: number) => void)(Math.max(0, Number(value) - 1))}>−</button><input disabled={locked} type="number" min="0" max={definition.dartsPerVisit} inputMode="numeric" value={Number(value)} onChange={(event) => (setter as (value: number) => void)(safeCount(event.target.value, definition.dartsPerVisit))} /><button type="button" disabled={locked || Number(value) >= definition.dartsPerVisit} onClick={() => (setter as (value: number) => void)(Math.min(definition.dartsPerVisit, Number(value) + 1))}>+</button></div></label>)}</div><div className={`engine-dart-balance ${usedDarts > definition.dartsPerVisit ? "is-error" : usedDarts === definition.dartsPerVisit ? "is-complete" : ""}`}><span>Erfasste Darts</span><strong>{usedDarts} / {definition.dartsPerVisit}</strong></div><SubmitButton locked={locked || usedDarts > definition.dartsPerVisit} submitting={submitting} label="Aufnahme speichern" onClick={() => void submitSegments()} />{feedbackPanel}</>;
+  async function submitScore(extra: Record<string, unknown> = {}) {
+    if (score === "") return;
+    await dispatch({ score: Number(score), ...extra });
+  }
 
-  if (definition.inputMode === "HITS") return <EngineFrame className="competition-engine-hits" submitting={submitting}>{limitPanel}<EngineHeader title={`Treffer auf ${state?.target ?? "das aktuelle Ziel"}`} state={state} submitting={submitting}/><div className="engine-hit-grid">{Array.from({ length: definition.dartsPerVisit + 1 }, (_, hits) => <button type="button" disabled={locked} key={hits} onClick={() => void dispatch({ hits })}><strong>{hits}</strong><span>Treffer</span></button>)}</div>{feedbackPanel}</EngineFrame>;
-  if (definition.inputMode === "SEGMENTS") return <EngineFrame className="competition-engine-segments" submitting={submitting}>{limitPanel}<EngineHeader title={`Treffer auf ${state?.target ?? "das aktuelle Ziel"}`} state={state} submitting={submitting}/>{segmentInput}</EngineFrame>;
-  if (definition.inputMode === "X01") { const inRule = String(config.inRule ?? "SINGLE"); const outRule = String(config.outRule ?? "DOUBLE"); const displayScore = state?.score ?? Number(config.startScore ?? 501); return <EngineFrame className="competition-engine-score" submitting={submitting}>{limitPanel}<EngineHeader title={`${displayScore} Rest · ${outRule} Out`} state={state} submitting={submitting}/><ScoreField score={score} setScore={setScore} disabled={locked} onEnter={() => void submitScore({ checkout: checkoutType !== "NONE", checkoutType, doubleIn })}/>{inRule === "DOUBLE" && !state?.opened && <button type="button" disabled={locked} className={`engine-checkout-toggle ${doubleIn ? "is-active" : ""}`} onClick={() => setDoubleIn(!doubleIn)}>Mit Doppel eröffnet</button>}<div className="engine-segmented"><button type="button" disabled={locked} className={checkoutType === "NONE" ? "is-active" : ""} onClick={() => setCheckoutType("NONE")}>Kein Checkout</button>{outRule === "SINGLE" && <button type="button" disabled={locked} className={checkoutType === "SINGLE" ? "is-active" : ""} onClick={() => setCheckoutType("SINGLE")}>Single Out</button>}<button type="button" disabled={locked} className={checkoutType === "DOUBLE" ? "is-active" : ""} onClick={() => setCheckoutType("DOUBLE")}>Double Out</button>{outRule === "MASTER" && <button type="button" disabled={locked} className={checkoutType === "TREBLE" ? "is-active" : ""} onClick={() => setCheckoutType("TREBLE")}>Treble Out</button>}</div><SubmitButton locked={locked || score === ""} submitting={submitting} label="Aufnahme speichern" onClick={() => void submitScore({ checkout: checkoutType !== "NONE", checkoutType, doubleIn })}/>{feedbackPanel}</EngineFrame>; }
-  if (definition.inputMode === "CHECKOUT") { const maxDarts = definition.maxDarts ?? 3; return <EngineFrame className="competition-engine-121" submitting={submitting}>{limitPanel}<EngineHeader title={`Checkout ${state?.target ?? "–"}`} state={state} submitting={submitting}/><div className="game121-status"><div><small>Aktuelles Finish</small><strong>{state?.target ?? "–"}</strong></div><div><small>Darts im Versuch</small><strong>{state?.attemptDarts ?? 0} / {maxDarts}</strong></div><div><small>Erfolge</small><strong>{state?.successes ?? 0}</strong></div></div>{kind === "GAME_121" && <ScoreField score={score} setScore={setScore} disabled={locked} onEnter={() => void submitScore({ checkout, dartsUsed })}/>}<CheckoutButtons checkout={checkout} setCheckout={setCheckout} disabled={locked}/><DartsButtons value={dartsUsed} setValue={setDartsUsed} max={maxDarts} disabled={locked}/><SubmitButton locked={locked || (kind === "GAME_121" && score === "")} submitting={submitting} label="Versuch speichern" onClick={() => void (kind === "GAME_121" ? submitScore({ checkout, dartsUsed }) : dispatch({ checkout, dartsUsed }))}/>{feedbackPanel}</EngineFrame>; }
-  if (definition.inputMode === "CRICKET") { const targets = Array.isArray(config.targets) ? config.targets : [15,16,17,18,19,20,"BULL"]; return <EngineFrame className="competition-engine-custom" submitting={submitting}>{limitPanel}<EngineHeader title="Cricket" state={state} submitting={submitting}/><label className="engine-field">Ziel<select disabled={locked} value={target || String(state?.target ?? targets[0])} onChange={(event) => setTarget(event.target.value)}>{targets.map((item) => <option key={String(item)}>{String(item)}</option>)}</select></label><div className="engine-hit-grid">{[0,1,2,3].map((value) => <button type="button" disabled={locked} key={value} className={marks === value ? "is-active" : ""} onClick={() => setMarks(value)}><strong>{value}</strong><span>Marken</span></button>)}</div><label className="engine-field">Zusatzpunkte<input disabled={locked} type="number" min="0" inputMode="numeric" value={points} onChange={(event) => setPoints(Number(event.target.value))}/></label><SubmitButton locked={locked} submitting={submitting} label="Aufnahme speichern" onClick={() => void dispatch({ target: target || state?.target, marks, points })}/><button className="button secondary full" disabled={locked} onClick={() => void dispatch({ finish: true }, false)}>Cricket abschließen</button>{feedbackPanel}</EngineFrame>; }
-  if (definition.inputMode === "KILLER") { const displayLives = state?.lives ?? Number(config.startLives ?? 3); return <EngineFrame className="competition-engine-custom" submitting={submitting}><EngineHeader title={`Killer · ${displayLives} Leben`} state={state} submitting={submitting}/><div className="engine-hit-grid">{[-3,-2,-1,0,1].map((value) => <button type="button" disabled={locked} key={value} onClick={() => void dispatch({ livesDelta: value })}><strong>{value > 0 ? `+${value}` : value}</strong><span>Leben</span></button>)}</div><button className="button secondary full" disabled={locked} onClick={() => void dispatch({ killer: true, livesDelta: 0 })}>Killerstatus aktivieren</button><button className="button danger-outline full" disabled={locked} onClick={() => void dispatch({ finish: true, livesDelta: 0 }, false)}>Spiel abschließen</button>{feedbackPanel}</EngineFrame>; }
-  if (definition.inputMode === "BOARD_GAME") { const targets = Array.isArray(config.targets) ? config.targets : []; return <EngineFrame className="competition-engine-custom" submitting={submitting}><EngineHeader title={exerciseName} state={state} submitting={submitting}/><div className="score-quick-grid">{targets.map((item) => <button type="button" disabled={locked} key={String(item)} onClick={() => void dispatch({ target: String(item) })}>{String(item)}</button>)}</div><button className="button secondary full" disabled={locked} onClick={() => void dispatch({ finish: true }, false)}>Spiel abschließen</button>{feedbackPanel}</EngineFrame>; }
-  if (definition.inputMode === "SCORE" || resultType === "SCORE_0_TO_180") return <EngineFrame className="competition-engine-score" submitting={submitting}>{limitPanel}<EngineHeader title="Score dieser Aufnahme" state={state} submitting={submitting}/><ScoreField score={score} setScore={setScore} disabled={locked} onEnter={() => void submitScore()}/><SubmitButton locked={locked || score === ""} submitting={submitting} label="Aufnahme speichern" onClick={() => void submitScore()}/>{feedbackPanel}</EngineFrame>;
-  return <EngineFrame className="competition-engine-custom" submitting={submitting}>{limitPanel}<EngineHeader title={`${exerciseName} · Ergebnis`} state={state} submitting={submitting}/><ScoreField score={score} setScore={setScore} disabled={locked} onEnter={() => void submitScore()}/><div className="engine-custom-actions"><SubmitButton locked={locked || score === ""} submitting={submitting} label="Speichern" onClick={() => void submitScore()}/><button className="button secondary" disabled={locked} onClick={() => void dispatch({ value: score === "" ? 0 : Number(score), finish: true }, false)}>Übung abschließen</button></div>{feedbackPanel}</EngineFrame>;
+  async function submitSegments() {
+    if (usedDarts > definition.dartsPerVisit) return;
+    await dispatch({ single, double, triple, hits: usedDarts });
+  }
+
+  const usedVisits = Math.max(0, (state?.visit ?? 1) - 1);
+  const limitCurrent =
+    completionMode === "VISIT_LIMIT"
+      ? usedVisits
+      : completionMode === "DART_LIMIT"
+        ? state?.dartsThrown ?? 0
+        : null;
+
+  const limitPanel =
+    (completionMode === "TIME_LIMIT" || limitCurrent != null) && completionValue ? (
+      <div className={`competition-limit ${remainingSeconds != null && remainingSeconds <= 30 ? "is-urgent" : ""}`}>
+        <div className="competition-limit-copy">
+          <small>
+            {completionMode === "TIME_LIMIT" ? "Verbleibende Zeit" : completionMode === "DART_LIMIT" ? "Darts" : "Aufnahmen"}
+          </small>
+          <strong>
+            {completionMode === "TIME_LIMIT"
+              ? formatTime(remainingSeconds ?? completionValue * 60)
+              : `${limitCurrent} / ${completionValue}`}
+          </strong>
+        </div>
+      </div>
+    ) : null;
+
+  const feedbackPanel = feedback ? (
+    <div className={`engine-v4-feedback is-${feedback.tone}`} role="status" aria-live="polite">
+      <span aria-hidden="true">{feedback.tone === "success" ? "✓" : "!"}</span>
+      <div>
+        <strong>{feedback.title}</strong>
+        <p>{feedback.detail}</p>
+      </div>
+    </div>
+  ) : null;
+
+  const segmentInput = (
+    <>
+      <div className="segment-entry">
+        {[
+          ["Single", single, setSingle],
+          ["Doppel", double, setDouble],
+          ["Treble", triple, setTriple],
+        ].map(([label, value, setter]) => (
+          <label key={String(label)}>
+            <span>{String(label)}</span>
+            <div className="engine-stepper">
+              <button
+                type="button"
+                disabled={locked || Number(value) <= 0}
+                onClick={() => (setter as (next: number) => void)(Math.max(0, Number(value) - 1))}
+              >
+                −
+              </button>
+              <input
+                disabled={locked}
+                type="number"
+                min="0"
+                max={definition.dartsPerVisit}
+                inputMode="numeric"
+                value={Number(value)}
+                onChange={(event) =>
+                  (setter as (next: number) => void)(safeCount(event.target.value, definition.dartsPerVisit))
+                }
+              />
+              <button
+                type="button"
+                disabled={locked || Number(value) >= definition.dartsPerVisit}
+                onClick={() =>
+                  (setter as (next: number) => void)(Math.min(definition.dartsPerVisit, Number(value) + 1))
+                }
+              >
+                +
+              </button>
+            </div>
+          </label>
+        ))}
+      </div>
+      <div
+        className={`engine-dart-balance ${
+          usedDarts > definition.dartsPerVisit ? "is-error" : usedDarts === definition.dartsPerVisit ? "is-complete" : ""
+        }`}
+      >
+        <span>Erfasste Darts</span>
+        <strong>
+          {usedDarts} / {definition.dartsPerVisit}
+        </strong>
+      </div>
+      <SubmitButton
+        locked={locked || usedDarts > definition.dartsPerVisit}
+        submitting={submitting}
+        label="Aufnahme speichern"
+        onClick={() => void submitSegments()}
+      />
+    </>
+  );
+
+  let inputContent: React.ReactNode;
+  let currentValue: string | number = state?.score ?? state?.hits ?? state?.lives ?? state?.successes ?? 0;
+  let valueLabel = state?.score != null ? "Punkte" : kind === "KILLER" ? "Leben" : "Aktuell";
+  let currentTarget = state?.target ?? exerciseName;
+  let targetCopy = targetDescription ?? targetDescriptionFor(kind, state?.target, exerciseName);
+
+  if (definition.inputMode === "HITS") {
+    inputContent = (
+      <div className="engine-hit-grid">
+        {Array.from({ length: definition.dartsPerVisit + 1 }, (_, hits) => (
+          <button type="button" disabled={locked} key={hits} onClick={() => void dispatch({ hits })}>
+            <strong>{hits}</strong>
+            <span>Treffer</span>
+          </button>
+        ))}
+      </div>
+    );
+  } else if (definition.inputMode === "SEGMENTS") {
+    inputContent = segmentInput;
+  } else if (definition.inputMode === "X01") {
+    const inRule = String(config.inRule ?? "SINGLE");
+    const outRule = String(config.outRule ?? "DOUBLE");
+    const displayScore = state?.score ?? Number(config.startScore ?? 501);
+    currentValue = displayScore;
+    valueLabel = "Punkte Rest";
+    currentTarget = `${outRule} Out`;
+    targetCopy = `${inRule} In · ${outRule} Out`;
+    inputContent = (
+      <>
+        <ScoreField
+          inputRef={scoreInputRef}
+          score={score}
+          setScore={setScore}
+          disabled={locked}
+          onEnter={() => void submitScore({ checkout: checkoutType !== "NONE", checkoutType, doubleIn })}
+        />
+        {inRule === "DOUBLE" && !state?.opened && (
+          <button
+            type="button"
+            disabled={locked}
+            className={`engine-checkout-toggle ${doubleIn ? "is-active" : ""}`}
+            onClick={() => setDoubleIn(!doubleIn)}
+          >
+            Mit Doppel eröffnet
+          </button>
+        )}
+        <div className="engine-segmented">
+          <button
+            type="button"
+            disabled={locked}
+            className={checkoutType === "NONE" ? "is-active" : ""}
+            onClick={() => setCheckoutType("NONE")}
+          >
+            Kein Checkout
+          </button>
+          {outRule === "SINGLE" && (
+            <button
+              type="button"
+              disabled={locked}
+              className={checkoutType === "SINGLE" ? "is-active" : ""}
+              onClick={() => setCheckoutType("SINGLE")}
+            >
+              Single Out
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={locked}
+            className={checkoutType === "DOUBLE" ? "is-active" : ""}
+            onClick={() => setCheckoutType("DOUBLE")}
+          >
+            Double Out
+          </button>
+          {outRule === "MASTER" && (
+            <button
+              type="button"
+              disabled={locked}
+              className={checkoutType === "TREBLE" ? "is-active" : ""}
+              onClick={() => setCheckoutType("TREBLE")}
+            >
+              Treble Out
+            </button>
+          )}
+        </div>
+        <SubmitButton
+          locked={locked || score === ""}
+          submitting={submitting}
+          label="Aufnahme speichern"
+          onClick={() => void submitScore({ checkout: checkoutType !== "NONE", checkoutType, doubleIn })}
+        />
+      </>
+    );
+  } else if (definition.inputMode === "CHECKOUT") {
+    const maxDarts = definition.maxDarts ?? 3;
+    currentValue = state?.successes ?? 0;
+    valueLabel = "Erfolge";
+    currentTarget = state?.target ?? "–";
+    targetCopy = `Checkout ${state?.target ?? "–"}`;
+    inputContent = (
+      <>
+        <div className="game121-status">
+          <div>
+            <small>Aktuelles Finish</small>
+            <strong>{state?.target ?? "–"}</strong>
+          </div>
+          <div>
+            <small>Darts im Versuch</small>
+            <strong>
+              {state?.attemptDarts ?? 0} / {maxDarts}
+            </strong>
+          </div>
+          <div>
+            <small>Erfolge</small>
+            <strong>{state?.successes ?? 0}</strong>
+          </div>
+        </div>
+        {kind === "GAME_121" && (
+          <ScoreField
+            inputRef={scoreInputRef}
+            score={score}
+            setScore={setScore}
+            disabled={locked}
+            onEnter={() => void submitScore({ checkout, dartsUsed })}
+          />
+        )}
+        <CheckoutButtons checkout={checkout} setCheckout={setCheckout} disabled={locked} />
+        <DartsButtons value={dartsUsed} setValue={setDartsUsed} max={maxDarts} disabled={locked} />
+        <SubmitButton
+          locked={locked || (kind === "GAME_121" && score === "")}
+          submitting={submitting}
+          label="Versuch speichern"
+          onClick={() =>
+            void (kind === "GAME_121" ? submitScore({ checkout, dartsUsed }) : dispatch({ checkout, dartsUsed }))
+          }
+        />
+      </>
+    );
+  } else if (definition.inputMode === "CRICKET") {
+    const targets = Array.isArray(config.targets) ? config.targets : [15, 16, 17, 18, 19, 20, "BULL"];
+    currentValue = points;
+    valueLabel = "Punkte";
+    currentTarget = target || String(state?.target ?? targets[0]);
+    targetCopy = "Marken setzen und offene Zahlen nutzen";
+    inputContent = (
+      <>
+        <label className="engine-field">
+          Ziel
+          <select
+            disabled={locked}
+            value={target || String(state?.target ?? targets[0])}
+            onChange={(event) => setTarget(event.target.value)}
+          >
+            {targets.map((item) => (
+              <option key={String(item)}>{String(item)}</option>
+            ))}
+          </select>
+        </label>
+        <div className="engine-hit-grid">
+          {[0, 1, 2, 3].map((value) => (
+            <button
+              type="button"
+              disabled={locked}
+              key={value}
+              className={marks === value ? "is-active" : ""}
+              onClick={() => setMarks(value)}
+            >
+              <strong>{value}</strong>
+              <span>Marken</span>
+            </button>
+          ))}
+        </div>
+        <label className="engine-field">
+          Zusatzpunkte
+          <input
+            disabled={locked}
+            type="number"
+            min="0"
+            inputMode="numeric"
+            value={points}
+            onChange={(event) => setPoints(Number(event.target.value))}
+          />
+        </label>
+        <SubmitButton
+          locked={locked}
+          submitting={submitting}
+          label="Aufnahme speichern"
+          onClick={() => void dispatch({ target: target || state?.target, marks, points })}
+        />
+      </>
+    );
+  } else if (definition.inputMode === "KILLER") {
+    const displayLives = state?.lives ?? Number(config.startLives ?? 3);
+    currentValue = displayLives;
+    valueLabel = "Leben";
+    currentTarget = state?.target ?? "Gegner";
+    targetCopy = "Treffer verändert den Lebensstand";
+    inputContent = (
+      <>
+        <div className="engine-hit-grid">
+          {[-3, -2, -1, 0, 1].map((value) => (
+            <button type="button" disabled={locked} key={value} onClick={() => void dispatch({ livesDelta: value })}>
+              <strong>{value > 0 ? `+${value}` : value}</strong>
+              <span>Leben</span>
+            </button>
+          ))}
+        </div>
+        <button
+          className="button secondary full"
+          disabled={locked}
+          onClick={() => void dispatch({ killer: true, livesDelta: 0 })}
+        >
+          Killerstatus aktivieren
+        </button>
+      </>
+    );
+  } else if (definition.inputMode === "BOARD_GAME") {
+    const targets = Array.isArray(config.targets) ? config.targets : [];
+    currentTarget = state?.target ?? targets[0] ?? exerciseName;
+    targetCopy = "Aktuelles Spielfeld";
+    inputContent = (
+      <div className="score-quick-grid">
+        {targets.map((item) => (
+          <button type="button" disabled={locked} key={String(item)} onClick={() => void dispatch({ target: String(item) })}>
+            {String(item)}
+          </button>
+        ))}
+      </div>
+    );
+  } else {
+    currentValue = state?.score ?? 0;
+    valueLabel = "Punkte";
+    currentTarget = state?.target ?? (definition.inputMode === "SCORE" ? "Score" : exerciseName);
+    targetCopy = definition.inputMode === "SCORE" ? "Punkte dieser Aufnahme" : targetCopy;
+    inputContent = (
+      <>
+        <ScoreField
+          inputRef={scoreInputRef}
+          score={score}
+          setScore={setScore}
+          disabled={locked}
+          onEnter={() => void submitScore()}
+        />
+        <SubmitButton
+          locked={locked || score === ""}
+          submitting={submitting}
+          label="Aufnahme speichern"
+          onClick={() => void submitScore()}
+        />
+      </>
+    );
+  }
+
+  return (
+    <section
+      className={`training-engine-pro ${submitting ? "is-submitting" : ""} ${successPulse ? "is-success" : ""} ${
+        paused ? "is-paused" : ""
+      }`}
+      aria-busy={submitting}
+      data-engine-kind={kind}
+    >
+      <header className="training-engine-topbar">
+        <div className="training-engine-identity">
+          <span>Training</span>
+          <strong>{trainingName ?? state?.trainingName ?? "Dart-Training"}</strong>
+          <small>{exerciseName}</small>
+        </div>
+
+        <div className="training-engine-player">
+          <span>Wer ist dran</span>
+          <strong>{playerName ?? state?.playerName ?? "Aktiver Spieler"}</strong>
+          <small>
+            <i aria-hidden="true" />
+            {paused ? "Pausiert" : submitting ? "Wird gespeichert" : "Bereit"}
+          </small>
+        </div>
+
+        <button
+          type="button"
+          className="training-engine-finish"
+          disabled={locked}
+          onClick={() => void runAction("finish", onFinish ?? (() => dispatch({ finish: true }, false)))}
+        >
+          <span>Beenden</span>
+          <b aria-hidden="true">×</b>
+        </button>
+      </header>
+
+      <div className="training-engine-overview">
+        <MetricCard label="Aktueller Punktestand" value={currentValue} caption={valueLabel} tone="score" />
+        <MetricCard label="Aktuelles Ziel" value={currentTarget} caption={targetCopy} tone="target" />
+      </div>
+
+      {limitPanel}
+
+      <div className="training-engine-input-card">
+        <div className="training-engine-section-title">
+          <div>
+            <span>Eingabe</span>
+            <strong>{inputModeLabel(definition.inputMode)}</strong>
+          </div>
+          <div className="training-engine-visit">
+            <span>Aufnahme</span>
+            <strong>{state?.visit ?? 1}</strong>
+          </div>
+        </div>
+
+        <div className="training-engine-input-content">{inputContent}</div>
+        {feedbackPanel}
+      </div>
+
+      <footer className="training-engine-actions">
+        <button
+          type="button"
+          className="training-engine-action is-undo"
+          disabled={locked}
+          onClick={() => void runAction("undo", onUndo)}
+          title={onUndo ? "Letzte gespeicherte Eingabe rückgängig machen" : "Aktuelle Eingabe zurücksetzen"}
+        >
+          <span aria-hidden="true">↶</span>
+          <strong>{actionBusy === "undo" ? "Wird ausgeführt …" : "Rückgängig"}</strong>
+        </button>
+        <button
+          type="button"
+          className={`training-engine-action is-pause ${paused ? "is-active" : ""}`}
+          disabled={locked || !onPause}
+          onClick={() => void runAction("pause", onPause)}
+          title={onPause ? "Training pausieren oder fortsetzen" : "Pause wird durch die Trainingsseite gesteuert"}
+        >
+          <span aria-hidden="true">{paused ? "▶" : "Ⅱ"}</span>
+          <strong>{actionBusy === "pause" ? "Wird ausgeführt …" : paused ? "Fortsetzen" : "Pause"}</strong>
+        </button>
+      </footer>
+    </section>
+  );
 }
 
-function EngineFrame({ className, submitting, children }: { className: string; submitting: boolean; children: React.ReactNode }) { return <div className={`competition-engine engine-v4 ${className} ${submitting ? "is-submitting" : ""}`} aria-busy={submitting}>{children}</div>; }
-function EngineHeader({ title, state, submitting }: { title: string; state?: ExerciseState | null; submitting: boolean }) { return <div className="engine-v2-header engine-v4-header"><div><span className="engine-v4-eyebrow">Engine V4</span><div className="engine-kicker">{title}</div></div><div className="engine-v4-status"><i/><span>{submitting ? "Wird gespeichert" : "Eingabe bereit"}</span></div><div className="engine-v2-meta"><span>Aufnahme {state?.visit ?? 1}</span>{state?.dartsThrown != null && <span>{state.dartsThrown} Darts</span>}{state?.score != null && <span>{state.score} Punkte</span>}</div></div>; }
-function ScoreField({ score, setScore, disabled, onEnter }: { score: string; setScore: (value: string) => void; disabled: boolean; onEnter: () => void }) { const quickScores = [26, 41, 45, 60, 81, 85, 100, 121, 140, 180]; return <div className="engine-score-entry"><label>Score<input disabled={disabled} autoFocus type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && score !== "" && !disabled) { event.preventDefault(); onEnter(); } }} placeholder="0–180" /></label><div className="engine-quick-scores" aria-label="Schnellwerte">{quickScores.map((value) => <button type="button" disabled={disabled} key={value} className={score === String(value) ? "is-active" : ""} onClick={() => setScore(String(value))}>{value}</button>)}</div><small className="engine-keyboard-hint">Enter speichert die Aufnahme</small></div>; }
-function CheckoutButtons({ checkout, setCheckout, disabled }: { checkout: boolean; setCheckout: (value: boolean) => void; disabled: boolean }) { return <div className="engine-segmented"><button type="button" disabled={disabled} className={!checkout ? "is-active" : ""} onClick={() => setCheckout(false)}>Nicht gecheckt</button><button type="button" disabled={disabled} className={checkout ? "is-active is-success" : ""} onClick={() => setCheckout(true)}>Checkout geschafft</button></div>; }
-function DartsButtons({ value, setValue, max, disabled }: { value: number; setValue: (value: number) => void; max: number; disabled: boolean }) { return <div className="engine-darts-select"><small>Verwendete Darts</small><div>{Array.from({ length: max }, (_, index) => index + 1).map((item) => <button type="button" disabled={disabled} className={value === item ? "is-active" : ""} key={item} onClick={() => setValue(item)}>{item}</button>)}</div></div>; }
-function SubmitButton({ locked, submitting, label, onClick }: { locked: boolean; submitting: boolean; label: string; onClick: () => void }) { return <button className="button full engine-submit engine-v4-submit" disabled={locked} onClick={onClick}><span>{submitting ? "Speichert …" : label}</span>{!submitting && <b aria-hidden="true">→</b>}</button>; }
+function MetricCard({
+  label,
+  value,
+  caption,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  caption: string;
+  tone: "score" | "target";
+}) {
+  return (
+    <article className={`training-engine-metric is-${tone}`}>
+      <span>{label}</span>
+      <strong key={String(value)}>{value}</strong>
+      <small>{caption}</small>
+    </article>
+  );
+}
+
+function targetDescriptionFor(kind: string, target: string | undefined, exerciseName: string) {
+  if (target) {
+    if (kind.includes("CHECKOUT") || kind === "GAME_121") return `Checkout ${target}`;
+    return `Treffer auf ${target}`;
+  }
+  if (kind.includes("100_DARTS")) return "100 Darts";
+  return exerciseName;
+}
+
+function inputModeLabel(inputMode: string) {
+  const labels: Record<string, string> = {
+    SCORE: "Scoring",
+    X01: "X01-Aufnahme",
+    SEGMENTS: "Segmenttreffer",
+    HITS: "Treffer",
+    CHECKOUT: "Checkout",
+    CRICKET: "Cricket",
+    KILLER: "Killer",
+    BOARD_GAME: "Boardspiel",
+  };
+  return labels[inputMode] ?? "Ergebnis";
+}
+
+function ScoreField({
+  score,
+  setScore,
+  disabled,
+  onEnter,
+  inputRef,
+}: {
+  score: string;
+  setScore: (value: string) => void;
+  disabled: boolean;
+  onEnter: () => void;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
+  const quickScores = [20, 40, 60, 81, 100, 140, 180];
+  return (
+    <div className="engine-score-entry">
+      <label>
+        Score
+        <input
+          ref={inputRef}
+          disabled={disabled}
+          autoFocus
+          type="number"
+          inputMode="numeric"
+          min="0"
+          max="180"
+          value={score}
+          onChange={(event) => setScore(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && score !== "" && !disabled) {
+              event.preventDefault();
+              onEnter();
+            }
+          }}
+          placeholder="0–180"
+        />
+      </label>
+      <div className="engine-quick-scores" aria-label="Schnellwerte">
+        {quickScores.map((value) => (
+          <button
+            type="button"
+            disabled={disabled}
+            key={value}
+            className={score === String(value) ? "is-active" : ""}
+            onClick={() => setScore(String(value))}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <small className="engine-keyboard-hint">Enter speichert die Aufnahme</small>
+    </div>
+  );
+}
+
+function CheckoutButtons({
+  checkout,
+  setCheckout,
+  disabled,
+}: {
+  checkout: boolean;
+  setCheckout: (value: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="engine-segmented">
+      <button
+        type="button"
+        disabled={disabled}
+        className={!checkout ? "is-active" : ""}
+        onClick={() => setCheckout(false)}
+      >
+        Nicht gecheckt
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        className={checkout ? "is-active is-success" : ""}
+        onClick={() => setCheckout(true)}
+      >
+        Checkout geschafft
+      </button>
+    </div>
+  );
+}
+
+function DartsButtons({
+  value,
+  setValue,
+  max,
+  disabled,
+}: {
+  value: number;
+  setValue: (value: number) => void;
+  max: number;
+  disabled: boolean;
+}) {
+  return (
+    <div className="engine-darts-select">
+      <small>Verwendete Darts</small>
+      <div>
+        {Array.from({ length: max }, (_, index) => index + 1).map((item) => (
+          <button
+            type="button"
+            disabled={disabled}
+            className={value === item ? "is-active" : ""}
+            key={item}
+            onClick={() => setValue(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SubmitButton({
+  locked,
+  submitting,
+  label,
+  onClick,
+}: {
+  locked: boolean;
+  submitting: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="button full engine-submit engine-v4-submit" disabled={locked} onClick={onClick}>
+      <span>{submitting ? "Speichert …" : label}</span>
+      {!submitting && <b aria-hidden="true">→</b>}
+    </button>
+  );
+}
