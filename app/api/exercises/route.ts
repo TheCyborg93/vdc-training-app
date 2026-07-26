@@ -1,7 +1,12 @@
-import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
+import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncExerciseCatalog } from "@/lib/default-exercises";
+
+export const preferredRegion = "lhr1";
+export const runtime = "nodejs";
+
+let catalogCheckedForInstance = false;
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -19,29 +24,82 @@ function completionValue(value: unknown) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-async function ensureCatalog100() {
-  const [activeCount, finalCatalogExercise] = await Promise.all([
-    prisma.exercise.count({ where: { active: true, trainerNotes: { startsWith: "Katalogübung #" } } }),
-    prisma.exercise.findFirst({ where: { trainerNotes: "Katalogübung #100", active: true }, select: { id: true } }),
-  ]);
-  if (activeCount !== 100 || !finalCatalogExercise) return syncExerciseCatalog(prisma);
-  return null;
+async function bootstrapCatalogWhenEmpty() {
+  if (catalogCheckedForInstance) return null;
+
+  const catalogExercise = await prisma.exercise.findFirst({
+    where: { trainerNotes: { startsWith: "Katalogübung #" }, active: true },
+    select: { id: true },
+  });
+
+  if (catalogExercise) {
+    catalogCheckedForInstance = true;
+    return null;
+  }
+
+  const result = await syncExerciseCatalog(prisma);
+  catalogCheckedForInstance = true;
+  return result;
 }
 
 export async function GET() {
   try {
-    const catalogSync = await ensureCatalog100();
+    const catalogSync = await bootstrapCatalogWhenEmpty();
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
         orderBy: [{ active: "desc" }, { trainerNotes: "asc" }, { name: "asc" }],
-        include: { categories: { include: { category: true } } },
+        select: {
+          id: true,
+          name: true,
+          shortDescription: true,
+          description: true,
+          instructions: true,
+          materials: true,
+          trainerNotes: true,
+          defaultMinutes: true,
+          minPlayers: true,
+          maxPlayers: true,
+          difficulty: true,
+          intensity: true,
+          funFactor: true,
+          learningCurve: true,
+          resultType: true,
+          engine: true,
+          completionMode: true,
+          completionValue: true,
+          tagsJson: true,
+          variantsJson: true,
+          favorite: true,
+          active: true,
+          categories: {
+            select: {
+              category: { select: { name: true } },
+            },
+          },
+        },
       }),
-      prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } }),
+      prisma.exerciseCategory.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
     ]);
-    return NextResponse.json({ exercises, categories, catalogSync });
+
+    return NextResponse.json(
+      { exercises, categories, catalogSync },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=15, stale-while-revalidate=120",
+          "Server-Timing": catalogSync ? "catalog-sync;desc=100er-Katalog synchronisiert" : "catalog-read;desc=Katalog geladen",
+        },
+      },
+    );
   } catch (error) {
     console.error("Exercise GET failed", error);
-    return NextResponse.json({ error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." }, { status: 500 });
+    catalogCheckedForInstance = false;
+    return NextResponse.json(
+      { error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." },
+      { status: 500 },
+    );
   }
 }
 
@@ -51,6 +109,7 @@ export async function POST(request: Request) {
 
     if (body.action === "sync-defaults" || body.action === "replace-catalog") {
       const result = await syncExerciseCatalog(prisma);
+      catalogCheckedForInstance = true;
       return NextResponse.json({
         ...result,
         message: `100er-Katalog synchronisiert: ${result.created} erstellt, ${result.updated} aktualisiert, ${result.deleted} Altübungen gelöscht und ${result.deactivated} historische Altübungen deaktiviert.`,
@@ -71,7 +130,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Für diese Abschlussbedingung ist ein Wert größer als 0 erforderlich." }, { status: 400 });
     }
 
-    const duplicate = await prisma.exercise.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
+    const duplicate = await prisma.exercise.findFirst({
+      where: { name: { equals: name, mode: "insensitive" } },
+      select: { id: true },
+    });
     if (duplicate) return NextResponse.json({ error: "Eine Übung mit diesem Namen existiert bereits." }, { status: 409 });
 
     const exercise = await prisma.$transaction(async (tx) => {
@@ -94,7 +156,10 @@ export async function POST(request: Request) {
           engine: String(body.engine ?? "AUTO") as ExerciseEngine,
           completionMode: mode,
           completionValue: limit,
-          resultConfigJson: body.resultConfigJson ?? undefined,
+          resultConfigJson:
+            body.resultConfigJson && typeof body.resultConfigJson === "object"
+              ? (body.resultConfigJson as Prisma.InputJsonValue)
+              : undefined,
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
@@ -103,7 +168,11 @@ export async function POST(request: Request) {
       });
 
       for (const categoryName of categoryNames) {
-        const category = await tx.exerciseCategory.upsert({ where: { name: categoryName }, update: {}, create: { name: categoryName } });
+        const category = await tx.exerciseCategory.upsert({
+          where: { name: categoryName },
+          update: {},
+          create: { name: categoryName },
+        });
         await tx.exerciseCategoryLink.create({ data: { exerciseId: created.id, categoryId: category.id } });
       }
       return created;
