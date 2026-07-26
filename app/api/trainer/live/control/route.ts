@@ -43,12 +43,36 @@ function nextActiveIndex(progress: ProgressState): number {
   return progress.playerIndex;
 }
 
+async function completeBoardSession(session: { id: number; trainingDayId: number; randomOrderJson: unknown }) {
+  await prisma.$transaction(async (tx) => {
+    await tx.boardSession.update({
+      where: { id: session.id },
+      data: {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        currentExerciseId: null,
+        randomOrderJson: session.randomOrderJson as Prisma.InputJsonValue,
+      },
+    });
+
+    const openBoards = await tx.boardSession.count({
+      where: {
+        trainingDayId: session.trainingDayId,
+        id: { not: session.id },
+        status: { not: "COMPLETED" },
+      },
+    });
+
+    if (openBoards === 0) {
+      await tx.trainingDay.update({ where: { id: session.trainingDayId }, data: { status: "COMPLETED" } });
+    }
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const trainer = await getAuthenticatedTrainer();
-    if (!trainer) {
-      return NextResponse.json({ error: "Keine Berechtigung für diese Traineraktion." }, { status: 403 });
-    }
+    if (!trainer) return NextResponse.json({ error: "Keine Berechtigung für diese Traineraktion." }, { status: 403 });
 
     const body = await request.json();
     const boardSessionId = Number(body.boardSessionId);
@@ -90,14 +114,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ session: updated, message: "Board fortgesetzt." });
     }
 
+    if (action === "finish_board") {
+      if (session.status === "COMPLETED") return NextResponse.json({ error: "Dieses Board-Training ist bereits abgeschlossen." }, { status: 409 });
+      if (session.status === "NOT_STARTED") return NextResponse.json({ error: "Ein noch nicht gestartetes Board kann nicht abgeschlossen werden." }, { status: 409 });
+      await completeBoardSession(session);
+      return NextResponse.json({ completed: true, message: "Board-Training vollständig beendet." });
+    }
+
     if (!progress) return NextResponse.json({ error: "Das Board wurde noch nicht gestartet oder der Fortschritt ist ungültig." }, { status: 409 });
-    if (session.status !== "RUNNING" && action !== "reorder") return NextResponse.json({ error: "Das Board muss für diese Aktion laufen." }, { status: 409 });
+
+    const controllable = session.status === "RUNNING" || session.status === "PAUSED";
+    if (!controllable && action !== "reorder") return NextResponse.json({ error: "Das Board muss für diese Aktion laufen oder pausiert sein." }, { status: 409 });
 
     if (action === "skip") {
+      if (session.status !== "RUNNING") return NextResponse.json({ error: "Spieler können nur bei laufendem Training gewechselt werden." }, { status: 409 });
       const nextIndex = nextActiveIndex(progress);
       const updatedProgress = { ...progress, playerIndex: nextIndex };
       await prisma.boardSession.update({ where: { id: session.id }, data: { randomOrderJson: updatedProgress as Prisma.InputJsonValue } });
-      return NextResponse.json({ progress: updatedProgress, nextPlayerId: updatedProgress.order[nextIndex], message: "Spieler übersprungen." });
+      return NextResponse.json({ progress: updatedProgress, nextPlayerId: updatedProgress.order[nextIndex], message: "Zum nächsten Spieler gewechselt." });
     }
 
     if (action === "reorder") {
@@ -119,28 +153,32 @@ export async function POST(request: Request) {
       const nextExerciseIndex = progress.exerciseIndex + 1;
       const completed = nextExerciseIndex >= exercises.length;
 
-      await prisma.$transaction(async (tx) => {
-        if (completed) {
-          await tx.boardSession.update({
-            where: { id: session.id },
-            data: { status: "COMPLETED", completedAt: new Date(), currentExerciseId: null, randomOrderJson: progress as Prisma.InputJsonValue },
-          });
-          const openBoards = await tx.boardSession.count({ where: { trainingDayId: session.trainingDayId, id: { not: session.id }, status: { not: "COMPLETED" } } });
-          if (openBoards === 0) await tx.trainingDay.update({ where: { id: session.trainingDayId }, data: { status: "COMPLETED" } });
-          return;
-        }
+      if (completed) {
+        await completeBoardSession(session);
+        return NextResponse.json({ completed: true, message: "Letzte Übung und Board-Training abgeschlossen." });
+      }
 
-        const order = shuffle(validPlayerIds);
-        const exercise = exercises[nextExerciseIndex].exercise;
-        const playerStates = Object.fromEntries(order.map((playerId: number) => [String(playerId), createInitialExerciseState(exercise)]));
-        const nextProgress: ProgressState = { order, exerciseIndex: nextExerciseIndex, playerIndex: 0, roundNumber: progress.roundNumber + 1, playerStates };
-        await tx.boardSession.update({
-          where: { id: session.id },
-          data: { currentExerciseId: exercise.id, randomOrderJson: nextProgress as Prisma.InputJsonValue },
-        });
+      const order = shuffle(validPlayerIds);
+      const exercise = exercises[nextExerciseIndex].exercise;
+      const playerStates = Object.fromEntries(order.map((playerId: number) => [String(playerId), createInitialExerciseState(exercise)]));
+      const nextProgress: ProgressState = {
+        order,
+        exerciseIndex: nextExerciseIndex,
+        playerIndex: 0,
+        roundNumber: progress.roundNumber + 1,
+        playerStates,
+      };
+
+      await prisma.boardSession.update({
+        where: { id: session.id },
+        data: {
+          status: session.status,
+          currentExerciseId: exercise.id,
+          randomOrderJson: nextProgress as Prisma.InputJsonValue,
+        },
       });
 
-      return NextResponse.json({ completed, message: completed ? "Board-Training abgeschlossen." : "Übung beendet. Nächste Übung wurde gestartet." });
+      return NextResponse.json({ completed: false, message: "Übung abgeschlossen. Die nächste Übung ist vorbereitet." });
     }
 
     return NextResponse.json({ error: "Unbekannte Traineraktion." }, { status: 400 });
