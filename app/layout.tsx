@@ -25,6 +25,7 @@ import "./vdc-dashboard-v3.css";
 import "./vdc-dashboard-insights.css";
 import "./vdc-dashboard-briefing.css";
 import "./vdc-live-center-v4.css";
+import "./vdc-live-focus.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
