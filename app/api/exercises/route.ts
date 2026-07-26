@@ -1,7 +1,7 @@
 import { ExerciseCompletionMode, ExerciseEngine, ExerciseResultType } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureDefaultExercises, syncExerciseCatalog } from "@/lib/default-exercises";
+import { syncExerciseCatalog } from "@/lib/default-exercises";
 
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -19,8 +19,18 @@ function completionValue(value: unknown) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+async function ensureCatalog100() {
+  const [activeCount, finalCatalogExercise] = await Promise.all([
+    prisma.exercise.count({ where: { active: true, trainerNotes: { startsWith: "Katalogübung #" } } }),
+    prisma.exercise.findFirst({ where: { trainerNotes: "Katalogübung #100", active: true }, select: { id: true } }),
+  ]);
+  if (activeCount !== 100 || !finalCatalogExercise) return syncExerciseCatalog(prisma);
+  return null;
+}
+
 export async function GET() {
   try {
+    const catalogSync = await ensureCatalog100();
     const [exercises, categories] = await Promise.all([
       prisma.exercise.findMany({
         orderBy: [{ active: "desc" }, { trainerNotes: "asc" }, { name: "asc" }],
@@ -28,7 +38,7 @@ export async function GET() {
       }),
       prisma.exerciseCategory.findMany({ orderBy: { name: "asc" } }),
     ]);
-    return NextResponse.json({ exercises, categories });
+    return NextResponse.json({ exercises, categories, catalogSync });
   } catch (error) {
     console.error("Exercise GET failed", error);
     return NextResponse.json({ error: "Übungen konnten nicht geladen werden. Bitte Datenbankverbindung und Prisma-Schema prüfen." }, { status: 500 });
@@ -39,16 +49,11 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    if (body.action === "sync-defaults") {
-      const added = await ensureDefaultExercises(prisma);
-      return NextResponse.json({ added, message: `${added} fehlende Katalogübungen wurden ergänzt.` });
-    }
-
-    if (body.action === "replace-catalog") {
+    if (body.action === "sync-defaults" || body.action === "replace-catalog") {
       const result = await syncExerciseCatalog(prisma);
       return NextResponse.json({
         ...result,
-        message: `Katalog synchronisiert: ${result.created} erstellt, ${result.updated} aktualisiert, ${result.deleted} Altübungen gelöscht und ${result.deactivated} historische Altübungen deaktiviert.`,
+        message: `100er-Katalog synchronisiert: ${result.created} erstellt, ${result.updated} aktualisiert, ${result.deleted} Altübungen gelöscht und ${result.deactivated} historische Altübungen deaktiviert.`,
       });
     }
 
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
           engine: String(body.engine ?? "AUTO") as ExerciseEngine,
           completionMode: mode,
           completionValue: limit,
-          resultConfigJson: body.resultConfigJson ?? undefined,
+          resultConfigJson: body.resultConfigJson && typeof body.resultConfigJson === "object" ? body.resultConfigJson : undefined,
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
