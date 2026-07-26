@@ -59,14 +59,26 @@ export default async function TrainerPage() {
         id: true,
         status: true,
         trainingDate: true,
-        trainingPlan: { select: { title: true, goal: true, durationMin: true } },
+        trainingPlan: {
+          select: {
+            title: true,
+            goal: true,
+            durationMin: true,
+            exercises: {
+              select: {
+                exerciseId: true,
+                exercise: { select: { name: true } },
+              },
+            },
+          },
+        },
         boards: { select: { boardId: true, board: { select: { name: true } } } },
         players: { select: { playerId: true } },
         sessions: {
           select: {
             boardId: true,
             status: true,
-            currentExercise: { select: { name: true } },
+            currentExerciseId: true,
           },
         },
       },
@@ -93,6 +105,9 @@ export default async function TrainerPage() {
   const primaryHref = currentTraining?.status === "RUNNING" ? "/trainer/live" : "/trainer/trainingstag";
   const primaryLabel = currentTraining?.status === "RUNNING" ? "Live Center öffnen" : currentTraining ? "Trainingstag öffnen" : "Trainingstag planen";
   const boardUtilization = totalBoards > 0 ? Math.round((occupiedBoards / totalBoards) * 100) : 0;
+  const exerciseNames = new Map(
+    currentTraining?.trainingPlan.exercises.map((item) => [item.exerciseId, item.exercise.name]) ?? [],
+  );
 
   return (
     <main className="vdc-dashboard-page vdc-dashboard-v3">
@@ -133,7 +148,7 @@ export default async function TrainerPage() {
         </article>
         <article>
           <span className="vdc-v3-kpi-symbol">↗</span>
-          <div><small>Trainingstage 2026</small><strong>{completedThisYear}</strong><p>{completedThisMonth} in diesem Monat</p></div>
+          <div><small>Trainingstage {now.getFullYear()}</small><strong>{completedThisYear}</strong><p>{completedThisMonth} in diesem Monat</p></div>
         </article>
         <article>
           <span className="vdc-v3-kpi-symbol">≡</span>
@@ -189,12 +204,15 @@ export default async function TrainerPage() {
             {currentTraining?.boards.map((entry) => {
               const session = currentTraining.sessions.find((item) => item.boardId === entry.boardId);
               const status = session?.status ?? "NOT_STARTED";
+              const currentExerciseName = session?.currentExerciseId
+                ? exerciseNames.get(session.currentExerciseId)
+                : undefined;
               return (
                 <div key={entry.boardId} className={`is-${status.toLowerCase()}`}>
                   <span className={`vdc-board-dot is-${status.toLowerCase()}`} />
                   <div>
                     <strong>{entry.board.name}</strong>
-                    <small>{session?.currentExercise?.name ?? statusLabel(status)}</small>
+                    <small>{currentExerciseName ?? statusLabel(status)}</small>
                   </div>
                   <b>{status === "RUNNING" ? "LIVE" : statusLabel(status)}</b>
                 </div>
