@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import TrainingIntelligence, { type TrainingIntelligenceData } from "@/components/coach/TrainingIntelligence";
+import WeeklyChallenge, { type WeeklyChallengeData } from "@/components/coach/WeeklyChallenge";
 import "./styles.css";
 
 type Area = { key: string; label: string; value: number; trend: number; samples: number };
@@ -16,10 +18,12 @@ type Profile = {
   weakest: Area[];
   recommendations: Recommendation[];
   summary: string;
+  weeklyChallenge: WeeklyChallengeData;
 };
 type ResponseData = {
   generatedAt: string;
   overview: { players: number; improving: number; declining: number; analyzedResults: number; focus: { label: string; count: number }[] };
+  trainingIntelligence: TrainingIntelligenceData;
   profiles: Profile[];
 };
 
@@ -69,6 +73,8 @@ export default function AiCoachPage() {
             <Kpi label="Mit Warnsignal" value={data.overview.declining} warning />
           </section>
 
+          <TrainingIntelligence data={data.trainingIntelligence} />
+
           <section className="coach-focus card">
             <div><span className="eyebrow">Vereinsfokus</span><h2>Empfohlene Schwerpunkte</h2></div>
             <div className="coach-focus-list">
@@ -104,6 +110,8 @@ function PlayerAnalysis({ profile }: { profile: Profile }) {
         <b>{area.value}</b>
       </div>)}
     </article>
+
+    <WeeklyChallenge challenge={profile.weeklyChallenge} />
 
     <article className="card coach-strengths">
       <span className="eyebrow">Stärken & Schwächen</span>
