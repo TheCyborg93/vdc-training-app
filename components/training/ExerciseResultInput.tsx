@@ -57,7 +57,7 @@ export default function ExerciseResultInput({
   const [target, setTarget] = useState(""); const [marks, setMarks] = useState(0); const [points, setPoints] = useState(0);
   const [now, setNow] = useState(() => Date.now()); const [submitting, setSubmitting] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null); const [feedback, setFeedback] = useState<Feedback>(null);
-  const [successPulse, setSuccessPulse] = useState(false);
+  const [successPulse, setSuccessPulse] = useState(false); const [finishOpen, setFinishOpen] = useState(false);
   const timeoutSent = useRef(false); const feedbackTimer = useRef<number | null>(null); const scoreRef = useRef<HTMLInputElement | null>(null);
 
   const kind = state?.kind ?? "CUSTOM";
@@ -82,7 +82,7 @@ export default function ExerciseResultInput({
   }
 
   useEffect(() => { timeoutSent.current = false; }, [state?.deadlineAt, state?.visit]);
-  useEffect(() => { resetEntry(); setFeedback(null); }, [state?.visit, state?.target]);
+  useEffect(() => { resetEntry(); setFeedback(null); setFinishOpen(false); }, [state?.visit, state?.target]);
   useEffect(() => {
     if (completionMode !== "TIME_LIMIT" || !state?.deadlineAt) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -123,6 +123,27 @@ export default function ExerciseResultInput({
     if (numericScore === null || scoreInvalid) return;
     await dispatch({ score: numericScore, ...extra });
   }
+  async function confirmFinish() {
+    setFinishOpen(false);
+    await runAction("finish", onFinish ?? (() => dispatch({ finish: true }, false)));
+  }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const element = event.target instanceof HTMLElement ? event.target : null;
+      const editing = Boolean(element?.matches("input, textarea, select, [contenteditable='true']"));
+      if (event.key === "Escape" && finishOpen) { event.preventDefault(); setFinishOpen(false); return; }
+      if (locked || finishOpen) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault(); void runAction("undo", onUndo); return;
+      }
+      if (!editing && event.code === "Space" && onPause) {
+        event.preventDefault(); void runAction("pause", onPause);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [finishOpen, locked, onPause, onUndo]);
 
   const usedVisits = Math.max(0, (state?.visit ?? 1) - 1);
   const limitCurrent = completionMode === "VISIT_LIMIT" ? usedVisits : completionMode === "DART_LIMIT" ? state?.dartsThrown ?? 0 : null;
@@ -163,11 +184,12 @@ export default function ExerciseResultInput({
   }
 
   return <section className={`vdcx-shell ${submitting ? "is-saving" : ""} ${successPulse ? "is-success" : ""} ${paused ? "is-paused" : ""}`} aria-busy={submitting} data-engine-kind={kind}>
-    <header className="vdcx-topbar"><div className="vdcx-training"><span>Training</span><strong>{trainingName ?? state?.trainingName ?? "Dart-Training"}</strong><small>{exerciseName}</small></div><div className="vdcx-player"><span>Wer ist dran</span><strong>{playerName ?? state?.playerName ?? "Aktiver Spieler"}</strong><small><i/>{paused ? "Pausiert" : submitting ? "Wird gespeichert" : "Bereit"}</small></div><button type="button" className="vdcx-finish" disabled={locked} onClick={() => void runAction("finish", onFinish ?? (() => dispatch({ finish: true }, false)))}><span>Beenden</span><b>×</b></button></header>
+    <header className="vdcx-topbar"><div className="vdcx-training"><span>Training</span><strong>{trainingName ?? state?.trainingName ?? "Dart-Training"}</strong><small>{exerciseName}</small></div><div className="vdcx-player"><span>Wer ist dran</span><strong>{playerName ?? state?.playerName ?? "Aktiver Spieler"}</strong><small><i/>{paused ? "Pausiert" : submitting ? "Wird gespeichert" : "Bereit"}</small></div><button type="button" className="vdcx-finish" disabled={locked} onClick={() => setFinishOpen(true)}><span>Beenden</span><b>×</b></button></header>
     <div className="vdcx-metrics"><Metric label="Aktueller Punktestand" value={currentValue} caption={valueLabel}/><Metric label="Aktuelles Ziel" value={currentTarget} caption={currentTargetCopy} target/></div>
     {(completionMode === "TIME_LIMIT" || limitCurrent != null) && completionValue ? <div className={`vdcx-limit ${remainingSeconds != null && remainingSeconds <= 30 ? "is-urgent" : ""}`}><span>{progressLabel}</span><strong>{progressValue}</strong></div> : null}
     <main className="vdcx-input"><div className="vdcx-input-head"><div><span>Eingabe</span><strong>{modeLabel(definition.inputMode)}</strong></div><div><span>Aufnahme</span><strong>{state?.visit ?? 1}</strong></div></div><div className="vdcx-module">{module}</div>{feedback && <div className={`vdcx-feedback is-${feedback.tone}`} role="status" aria-live="polite"><b>{feedback.tone === "success" ? "✓" : "!"}</b><div><strong>{feedback.title}</strong><p>{feedback.detail}</p></div></div>}</main>
-    <footer className="vdcx-actions"><button type="button" disabled={locked} onClick={() => void runAction("undo", onUndo)}><span>↶</span><strong>{busyAction === "undo" ? "Wird ausgeführt …" : "Rückgängig"}</strong></button><button type="button" className={paused ? "is-active" : ""} disabled={locked || !onPause} onClick={() => void runAction("pause", onPause)}><span>{paused ? "▶" : "Ⅱ"}</span><strong>{busyAction === "pause" ? "Wird ausgeführt …" : paused ? "Fortsetzen" : "Pause"}</strong></button></footer>
+    <footer className="vdcx-actions"><button type="button" disabled={locked} onClick={() => void runAction("undo", onUndo)}><span>↶</span><strong>{busyAction === "undo" ? "Wird ausgeführt …" : "Rückgängig"}</strong><small>Strg/⌘ + Z</small></button><button type="button" className={paused ? "is-active" : ""} disabled={locked || !onPause} onClick={() => void runAction("pause", onPause)}><span>{paused ? "▶" : "Ⅱ"}</span><strong>{busyAction === "pause" ? "Wird ausgeführt …" : paused ? "Fortsetzen" : "Pause"}</strong><small>Leertaste</small></button></footer>
+    {finishOpen && <div className="vdcx-confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setFinishOpen(false); }}><div className="vdcx-confirm" role="dialog" aria-modal="true" aria-labelledby="vdcx-confirm-title"><span>Training beenden</span><strong id="vdcx-confirm-title">Übung wirklich abschließen?</strong><p>Die aktuelle Eingabe wird nicht automatisch gespeichert. Bereits gespeicherte Ergebnisse bleiben erhalten.</p><div><button type="button" onClick={() => setFinishOpen(false)}>Abbrechen</button><button type="button" className="is-danger" onClick={() => void confirmFinish()}>Jetzt beenden</button></div></div></div>}
   </section>;
 }
 
