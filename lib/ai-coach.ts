@@ -1,5 +1,9 @@
 export type CoachArea = "SCORING" | "CHECKOUT" | "DOUBLES" | "BULL" | "CONSISTENCY" | "TRAINING";
 
+export const CLUB_TRAINING_SESSIONS_PER_WEEK = 2;
+export const COACH_ANALYSIS_DAYS = 90;
+export const EXPECTED_ACTIVE_DAYS_90 = Math.round(COACH_ANALYSIS_DAYS / 7 * CLUB_TRAINING_SESSIONS_PER_WEEK);
+
 export type CoachResultInput = {
   calculatedScore: number | null;
   valueJson: unknown;
@@ -103,7 +107,7 @@ function areaRecommendation(area: CoachArea): CoachRecommendation {
     DOUBLES: { area, title: "Doppelquote verbessern", reason: "Die Zieltreffer auf Doppel sind aktuell der größte messbare Hebel.", exerciseNames: ["Bob's 27 - Classic", "Double Lock - D16", "Double Lock - D20"] },
     BULL: { area, title: "Bull-Kontrolle erhöhen", reason: "Bull-Treffer sind im Vergleich zu anderen Zielbereichen ausbaufähig.", exerciseNames: ["Bullseye Challenge", "100 Darts at Bullseye", "Finish 50 (Bull)"] },
     CONSISTENCY: { area, title: "Konstanz aufbauen", reason: "Die Ergebnisse schwanken innerhalb der letzten Einheiten deutlich.", exerciseNames: ["Around the Clock - Singles (Vorwärts)", "Black & White", "Halve It - Track 3"] },
-    TRAINING: { area, title: "Regelmäßigkeit erhöhen", reason: "Mehr kurze Trainingseinheiten liefern stabilere Fortschritte als einzelne lange Blöcke.", exerciseNames: ["Around the Clock - Singles (Vorwärts)", "Double Lock - D16", "61 in 3 Darts"] },
+    TRAINING: { area, title: "Regelmäßigkeit halten", reason: "Der Vereinsrhythmus liegt bei zwei Trainingstagen pro Woche. Regelmäßige Teilnahme ist wichtiger als zusätzliche tägliche Einheiten.", exerciseNames: ["Around the Clock - Singles (Vorwärts)", "Double Lock - D16", "61 in 3 Darts"] },
   };
   return map[area];
 }
@@ -132,7 +136,7 @@ export function buildCoachProfile(results: CoachResultInput[], activeDays: numbe
   const deviation = allScores.length > 1 ? Math.sqrt(average(allScores.map((value) => (value - mean) ** 2))) : 25;
   grouped.get("CONSISTENCY")!.all.push(clamp(100 - deviation * 1.6));
   grouped.get("CONSISTENCY")!.recent.push(clamp(100 - deviation * 1.6));
-  const trainingValue = clamp(activeDays / 12 * 100);
+  const trainingValue = clamp(activeDays / EXPECTED_ACTIVE_DAYS_90 * 100);
   grouped.get("TRAINING")!.all.push(trainingValue);
   grouped.get("TRAINING")!.recent.push(trainingValue);
 
@@ -152,7 +156,7 @@ export function buildCoachProfile(results: CoachResultInput[], activeDays: numbe
   const recommendations = weakest.slice(0, 2).map((area) => areaRecommendation(area.key));
   const strongest = sorted.filter((area) => area.samples > 0).slice(0, 2);
   const summary = results.length
-    ? `${strongest[0]?.label ?? "Training"} ist aktuell deine stärkste Disziplin. Der größte Hebel liegt bei ${weakest[0]?.label ?? "Konstanz"}.`
+    ? `${strongest[0]?.label ?? "Training"} ist aktuell deine stärkste Disziplin. Der größte Hebel liegt bei ${weakest[0]?.label ?? "Konstanz"}. Grundlage ist ein Soll von zwei Trainingstagen pro Woche.`
     : "Es liegen noch nicht genügend Trainingsergebnisse für eine belastbare Analyse vor.";
 
   return { performanceIndex: clamp(weighted) * 10, areas, strongest, weakest, recommendations, summary };
