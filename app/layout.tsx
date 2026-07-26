@@ -31,6 +31,7 @@ import "./vdc-live-completion.css";
 import "./vdc-live-attention.css";
 import "./vdc-live-trainer-mode.css";
 import "./vdc-engine-v4.css";
+import "./vdc-engine-embed-fix.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
