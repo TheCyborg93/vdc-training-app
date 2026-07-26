@@ -94,7 +94,7 @@ export async function POST(request: Request) {
           engine: String(body.engine ?? "AUTO") as ExerciseEngine,
           completionMode: mode,
           completionValue: limit,
-          resultConfigJson: body.resultConfigJson && typeof body.resultConfigJson === "object" ? body.resultConfigJson : undefined,
+          resultConfigJson: body.resultConfigJson ?? undefined,
           tagsJson: parseStringArray(body.tags),
           variantsJson: parseStringArray(body.variants),
           favorite: Boolean(body.favorite),
