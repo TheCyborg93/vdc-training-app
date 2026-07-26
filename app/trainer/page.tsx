@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const preferredRegion = "lhr1";
 
 function statusLabel(status?: string) {
   if (!status) return "Geplant";
@@ -28,17 +29,25 @@ export default async function TrainerPage() {
     prisma.trainingDay.count({ where: { status: "COMPLETED" } }),
     prisma.trainingDay.findFirst({
       where: { status: { in: ["PUBLISHED", "RUNNING"] } },
-      include: {
-        trainingPlan: true,
-        boards: { include: { board: true } },
-        players: true,
-        sessions: true,
+      select: {
+        status: true,
+        trainingDate: true,
+        trainingPlan: { select: { title: true, goal: true, durationMin: true } },
+        boards: { select: { boardId: true, board: { select: { name: true } } } },
+        players: { select: { playerId: true } },
+        sessions: { select: { boardId: true, status: true } },
       },
       orderBy: { trainingDate: "asc" },
     }),
     prisma.exerciseResult.findMany({
       where: { deletedAt: null },
-      include: { player: true, exercise: true },
+      select: {
+        id: true,
+        calculatedScore: true,
+        createdAt: true,
+        player: { select: { displayName: true } },
+        exercise: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 6,
     }),
@@ -124,6 +133,7 @@ export default async function TrainerPage() {
       <section className="vdc-dashboard-section">
         <header className="vdc-section-heading"><div><span className="vdc-kicker">Schnellzugriff</span><h2>Trainer-Werkzeuge</h2></div></header>
         <div className="vdc-action-grid">
+          <Link href="/trainer/ai-coach"><span>AI</span><div><strong>AI Coach</strong><p>Stärken, Schwächen und Trends analysieren.</p></div><b>→</b></Link>
           <Link href="/trainer/trainingsplaene"><span>≡</span><div><strong>Trainingsplan</strong><p>Plan erstellen oder Entwurf bearbeiten.</p></div><b>→</b></Link>
           <Link href="/trainer/heimtraining"><span>⌂</span><div><strong>Heimtraining</strong><p>Individuelle Pläne zuweisen.</p></div><b>→</b></Link>
           <Link href="/trainer/uebungen"><span>◎</span><div><strong>Übungskatalog</strong><p>Übungen und Engines verwalten.</p></div><b>→</b></Link>
