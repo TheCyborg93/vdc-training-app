@@ -1,0 +1,175 @@
+.trainer-live-heading-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.trainer-pace-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,.08));
+  border-radius: 16px;
+  background: rgba(255,255,255,.025);
+}
+
+.trainer-pace-status > div {
+  display: grid;
+  gap: 3px;
+}
+
+.trainer-pace-status strong {
+  font-size: 1.05rem;
+}
+
+.trainer-pace-status p,
+.trainer-pace-status > span {
+  margin: 0;
+  color: var(--text-muted, #9aa4b2);
+  font-size: .86rem;
+}
+
+.trainer-pace-status.is-ahead {
+  border-color: rgba(0, 200, 83, .34);
+  background: rgba(0, 200, 83, .07);
+}
+
+.trainer-pace-status.is-ontime {
+  border-color: rgba(0, 213, 255, .3);
+  background: rgba(0, 213, 255, .06);
+}
+
+.trainer-pace-status.is-behind {
+  border-color: rgba(255, 179, 0, .38);
+  background: rgba(255, 179, 0, .08);
+}
+
+.trainer-smart-pause {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px;
+  border: 1px solid rgba(255, 179, 0, .38);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255,179,0,.12), rgba(255,179,0,.035));
+}
+
+.trainer-smart-pause > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.trainer-smart-pause > div:first-child > span {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255,179,0,.16);
+  color: #ffc84d;
+  font-weight: 900;
+  font-size: 1.15rem;
+}
+
+.trainer-smart-pause strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.trainer-smart-pause p {
+  margin: 0;
+  color: var(--text-muted, #9aa4b2);
+  font-size: .9rem;
+}
+
+.trainer-smart-pause > div:last-child {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.trainer-cockpit-page:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  overflow: auto;
+  padding: 22px;
+  background: var(--bg-950, #06080d);
+}
+
+.trainer-cockpit-page:fullscreen .trainer-live-heading {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 14px 16px;
+  margin: -6px -6px 0;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  background: rgba(6,8,13,.94);
+  backdrop-filter: blur(18px);
+}
+
+.trainer-cockpit-page:fullscreen .trainer-live-summary {
+  display: none;
+}
+
+.trainer-cockpit-page:fullscreen .trainer-cockpit-layout {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.trainer-cockpit-page:fullscreen .trainer-board-wall-v4 {
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+}
+
+.trainer-cockpit-page:fullscreen .trainer-cockpit-side-stack {
+  top: 104px;
+}
+
+.trainer-cockpit-page.is-trainer-mode .trainer-live-heading h1::after {
+  content: " · TRAINERMODUS";
+  color: var(--primary, #e53935);
+  font-size: .48em;
+  letter-spacing: .12em;
+}
+
+@media (max-width: 900px) {
+  .trainer-pace-status,
+  .trainer-smart-pause {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .trainer-pace-status > span {
+    align-self: flex-start;
+  }
+
+  .trainer-smart-pause > div:last-child {
+    width: 100%;
+  }
+
+  .trainer-smart-pause > div:last-child .button {
+    flex: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .trainer-live-heading-actions,
+  .trainer-smart-pause > div:last-child {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .trainer-live-heading-actions .button,
+  .trainer-smart-pause > div:last-child .button {
+    width: 100%;
+  }
+
+  .trainer-cockpit-page:fullscreen {
+    padding: 10px;
+  }
+}
