@@ -3,6 +3,8 @@
 import { useEffect } from "react";
 
 const IMPOSSIBLE_THREE_DART_SCORES = new Set([163, 166, 169, 172, 173, 175, 176, 178, 179]);
+const ENGINE_SELECTOR = ".engine-v4, .training-engine-pro";
+const SCORE_INPUT_SELECTOR = `${ENGINE_SELECTOR} .engine-score-entry input`;
 
 function ensureGuidance(entry: HTMLElement) {
   let guidance = entry.querySelector<HTMLElement>(":scope > .engine-score-guidance");
@@ -17,7 +19,7 @@ function ensureGuidance(entry: HTMLElement) {
 }
 
 function enhanceScoreInput(input: HTMLInputElement) {
-  const engine = input.closest<HTMLElement>(".engine-v4");
+  const engine = input.closest<HTMLElement>(ENGINE_SELECTOR);
   const entry = input.closest<HTMLElement>(".engine-score-entry");
   if (!engine || !entry) return;
 
@@ -54,13 +56,17 @@ function enhanceScoreInput(input: HTMLInputElement) {
     return;
   }
 
-  const title = engine.querySelector<HTMLElement>(".engine-kicker")?.textContent ?? "";
-  const x01Match = title.match(/^(\d+)\s+Rest/i);
-  if (value !== null && x01Match) {
-    const currentRest = Number(x01Match[1]);
+  const engineKind = engine.dataset.engineKind ?? "";
+  const legacyTitle = engine.querySelector<HTMLElement>(".engine-kicker")?.textContent ?? "";
+  const scoreText = engine.querySelector<HTMLElement>(".training-engine-metric.is-score strong")?.textContent ?? "";
+  const targetText = engine.querySelector<HTMLElement>(".training-engine-metric.is-target")?.textContent ?? legacyTitle;
+  const currentRest = Number(scoreText.replace(/[^0-9]/g, ""));
+  const isX01 = /X01/i.test(engineKind) || /^\d+\s+Rest/i.test(legacyTitle);
+
+  if (value !== null && isX01 && Number.isFinite(currentRest)) {
     const nextRest = currentRest - value;
-    const requiresDouble = /DOUBLE\s+Out/i.test(title);
-    const requiresMaster = /MASTER\s+Out/i.test(title);
+    const requiresDouble = /DOUBLE\s+Out/i.test(targetText);
+    const requiresMaster = /MASTER\s+Out/i.test(targetText);
     const checkoutSelected = Boolean(engine.querySelector(".engine-segmented .is-active:not(:first-child)"));
 
     if (nextRest < 0 || ((requiresDouble || requiresMaster) && nextRest === 1)) {
@@ -91,19 +97,19 @@ function enhanceScoreInput(input: HTMLInputElement) {
 }
 
 function enhanceAll(root: ParentNode = document) {
-  root.querySelectorAll<HTMLInputElement>(".engine-v4 .engine-score-entry input").forEach(enhanceScoreInput);
+  root.querySelectorAll<HTMLInputElement>(SCORE_INPUT_SELECTOR).forEach(enhanceScoreInput);
 }
 
 export default function EngineV4Guard() {
   useEffect(() => {
     const onInput = (event: Event) => {
       const input = event.target instanceof HTMLInputElement ? event.target : null;
-      if (input?.matches(".engine-v4 .engine-score-entry input")) enhanceScoreInput(input);
+      if (input?.matches(SCORE_INPUT_SELECTOR)) enhanceScoreInput(input);
     };
 
     const onClick = (event: Event) => {
       const target = event.target instanceof Element ? event.target : null;
-      const engine = target?.closest<HTMLElement>(".engine-v4");
+      const engine = target?.closest<HTMLElement>(ENGINE_SELECTOR);
       if (!engine) return;
       window.requestAnimationFrame(() => enhanceAll(engine));
     };
