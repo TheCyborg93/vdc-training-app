@@ -1,0 +1,97 @@
+/* Embedded training/home-training mode: the outer result grid is the only shell. */
+.result-grid-engine > .vdcx-shell,
+.result-grid-engine .vdcx-shell {
+  display: grid !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+  gap: 10px !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  isolation: auto !important;
+}
+
+.result-grid-engine .vdcx-shell::before,
+.result-grid-engine .vdcx-shell::after,
+.result-grid-engine .vdcx-topbar,
+.result-grid-engine .vdcx-metrics,
+.result-grid-engine .vdcx-limit,
+.result-grid-engine .vdcx-actions {
+  display: none !important;
+  content: none !important;
+}
+
+.result-grid-engine .vdcx-input {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  gap: 12px !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  padding: 14px !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: rgba(12, 16, 22, .96) !important;
+  box-shadow: none !important;
+  overflow: auto !important;
+}
+
+.result-grid-engine .vdcx-input-head {
+  padding: 0 0 10px !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+}
+
+.result-grid-engine .vdcx-module {
+  align-content: center !important;
+  min-height: 0 !important;
+}
+
+.result-grid-engine .vdcx-feedback {
+  min-height: 54px !important;
+}
+
+/* Remove the obsolete free/info row and give the input the remaining viewport. */
+.training-result-grid {
+  grid-template-rows: minmax(112px, 1.05fr) minmax(94px, .85fr) minmax(260px, 3fr) auto !important;
+  grid-template-areas:
+    "score score"
+    "target player"
+    "engine engine"
+    "undo undo" !important;
+}
+
+.training-result-grid > .result-grid-free {
+  display: none !important;
+}
+
+.result-grid-engine {
+  min-height: 0 !important;
+  padding: 10px !important;
+  overflow: hidden !important;
+}
+
+@media (max-width: 760px) {
+  .training-result-grid {
+    grid-template-rows: minmax(82px, .95fr) minmax(74px, .75fr) minmax(250px, 3fr) auto !important;
+    gap: 7px !important;
+  }
+
+  .result-grid-engine {
+    padding: 6px !important;
+  }
+
+  .result-grid-engine .vdcx-input {
+    padding: 10px !important;
+    gap: 9px !important;
+  }
+}
+
+@media (max-height: 700px) {
+  .training-result-grid {
+    grid-template-rows: minmax(68px, .8fr) minmax(60px, .65fr) minmax(210px, 3fr) auto !important;
+  }
+}
