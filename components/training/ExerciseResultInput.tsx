@@ -60,13 +60,11 @@ export default function ExerciseResultInput({ resultType, exerciseName, completi
   }, [completionMode, state?.deadlineAt, now]);
 
   useEffect(() => { timeoutSent.current = false; }, [state?.deadlineAt, state?.visit]);
-
   useEffect(() => {
     if (completionMode !== "TIME_LIMIT" || !state?.deadlineAt) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [completionMode, state?.deadlineAt]);
-
   useEffect(() => {
     if (remainingSeconds !== 0 || timeoutSent.current || disabled) return;
     timeoutSent.current = true;
@@ -88,48 +86,80 @@ export default function ExerciseResultInput({ resultType, exerciseName, completi
   const limitPercent = limitCurrent != null && completionValue ? Math.min(100, Math.round((limitCurrent / completionValue) * 100)) : 0;
 
   const limitPanel = (completionMode === "TIME_LIMIT" || limitCurrent != null) && completionValue ? (
-    <div className="exercise-limit-panel" aria-live="polite">
-      <div><small>{completionMode === "TIME_LIMIT" ? "Verbleibende Zeit" : limitLabel}</small><strong>{completionMode === "TIME_LIMIT" ? formatTime(remainingSeconds ?? completionValue * 60) : `${limitCurrent} / ${completionValue}`}</strong><span>{completionMode === "TIME_LIMIT" ? `${completionValue} Minuten Gesamtzeit` : `${Math.max(0, completionValue - (limitCurrent ?? 0))} verbleibend`}</span></div>
-      <div className="progress-track"><span style={{ width: `${completionMode === "TIME_LIMIT" ? Math.max(0, Math.min(100, ((remainingSeconds ?? completionValue * 60) / (completionValue * 60)) * 100)) : limitPercent}%` }} /></div>
+    <div className="competition-limit" aria-live="polite">
+      <div className="competition-limit-copy">
+        <small>{completionMode === "TIME_LIMIT" ? "Verbleibende Zeit" : limitLabel}</small>
+        <strong>{completionMode === "TIME_LIMIT" ? formatTime(remainingSeconds ?? completionValue * 60) : `${limitCurrent} / ${completionValue}`}</strong>
+        <span>{completionMode === "TIME_LIMIT" ? `${completionValue} Minuten Gesamtzeit` : `${Math.max(0, completionValue - (limitCurrent ?? 0))} verbleibend`}</span>
+      </div>
+      <div className="competition-limit-track"><span style={{ width: `${completionMode === "TIME_LIMIT" ? Math.max(0, Math.min(100, ((remainingSeconds ?? completionValue * 60) / (completionValue * 60)) * 100)) : limitPercent}%` }} /></div>
     </div>
   ) : null;
 
   if (kind === "GAME_121") {
     const attemptDarts = state?.attemptDarts ?? 0;
     const dartsRemaining = Math.max(0, 9 - attemptDarts);
-    return (
-      <div className="visit-entry game121-entry">
-        <div className="game121-status">
-          <div><small>Restscore</small><strong>{state?.score ?? state?.target ?? 121}</strong></div>
-          <div><small>Versuch</small><strong>{attemptDarts} / 9</strong><span>{dartsRemaining} Darts übrig</span></div>
-          <div><small>Basiswert</small><strong>{state?.baseTarget ?? 121}</strong><span>Rückfall bei Fehlversuch</span></div>
-        </div>
-        <div className="numeric-result"><input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Score dieser Aufnahme" /></div>
-        <div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 121, 140, 180].map((value) => <button type="button" disabled={disabled} key={value} onClick={() => setScore(String(value))}>{value}</button>)}</div>
-        <div className="game121-checkout-row">
-          <button type="button" className={!checkout ? "is-active" : ""} disabled={disabled} onClick={() => setCheckout(false)}>Kein Checkout</button>
-          <button type="button" className={checkout ? "is-active success" : ""} disabled={disabled} onClick={() => setCheckout(true)}>Checkout geschafft</button>
-        </div>
-        <div className="game121-darts">
-          <small>Verwendete Darts in dieser Aufnahme</small>
-          <div>{[1, 2, 3].map((value) => <button type="button" className={dartsUsed === value ? "is-active" : ""} disabled={disabled || value > dartsRemaining} key={value} onClick={() => setDartsUsed(value)}>{value}</button>)}</div>
-        </div>
-        <button className="button full" disabled={disabled || score === "" || dartsRemaining === 0} onClick={() => void submitScore({ checkout, dartsUsed })}>Aufnahme speichern</button>
+    return <div className="competition-engine competition-engine-121">
+      <div className="engine-kicker">121 · Neun-Dart-Challenge</div>
+      <div className="game121-status">
+        <div><small>Restscore</small><strong>{state?.score ?? state?.target ?? 121}</strong></div>
+        <div><small>Darts im Versuch</small><strong>{attemptDarts} / 9</strong><span>{dartsRemaining} übrig</span></div>
+        <div><small>Gesicherter Wert</small><strong>{state?.baseTarget ?? 121}</strong><span>Rückfallwert</span></div>
       </div>
-    );
+      <div className="engine-score-entry"><label>Score der Aufnahme<input aria-label="Score der Aufnahme" type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="0–180" /></label></div>
+      <div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 121, 140, 180].map((value) => <button type="button" disabled={disabled} key={value} onClick={() => setScore(String(value))}>{value}</button>)}</div>
+      <div className="engine-segmented game121-checkout-row">
+        <button type="button" className={!checkout ? "is-active" : ""} disabled={disabled} onClick={() => setCheckout(false)}>Kein Checkout</button>
+        <button type="button" className={checkout ? "is-active is-success" : ""} disabled={disabled} onClick={() => setCheckout(true)}>Checkout geschafft</button>
+      </div>
+      <div className="engine-darts-select"><small>Verwendete Darts</small><div>{[1, 2, 3].map((value) => <button type="button" className={dartsUsed === value ? "is-active" : ""} disabled={disabled || value > dartsRemaining} key={value} onClick={() => setDartsUsed(value)}>{value}</button>)}</div></div>
+      <button className="button full engine-submit" disabled={disabled || score === "" || dartsRemaining === 0} onClick={() => void submitScore({ checkout, dartsUsed })}>Aufnahme speichern</button>
+    </div>;
   }
 
   if (kind === "BOB27" || kind.startsWith("AROUND_") || kind === "DOUBLES_ROUNDS" || kind === "BULL_ROUNDS" || kind === "HIT_ROUNDS") {
     const currentScore = state?.score ?? 27;
     const doubleValue = bob27DoubleValue(state);
-    return <div className="visit-entry">{limitPanel}<div className="bob27-scoreboard" aria-live="polite"><div><small>Aktueller Punktestand</small><strong>{currentScore}</strong><span>Startwert 27</span></div></div><div className="result-button-grid bob27-buttons">{[0, 1, 2, 3].map((hits) => { const preview = hits === 0 ? currentScore - doubleValue : currentScore + hits * doubleValue; return <button disabled={disabled || remainingSeconds === 0} key={hits} onClick={() => void onSubmit({ hits })}><strong>{hits}</strong><span>Treffer</span>{kind === "BOB27" && <em>Danach {preview}</em>}</button>; })}</div><p className="visit-help">Eine Auswahl speichert genau diese Aufnahme und wechselt danach automatisch weiter.</p></div>;
+    const title = kind === "BOB27" ? "Treffer auf das aktuelle Doppel" : kind === "BULL_ROUNDS" ? "Bull-Treffer dieser Aufnahme" : "Treffer dieser Aufnahme";
+    return <div className="competition-engine competition-engine-hits">
+      {limitPanel}<div className="engine-kicker">{title}</div>
+      <div className="engine-hit-grid">{[0, 1, 2, 3].map((hits) => { const preview = hits === 0 ? currentScore - doubleValue : currentScore + hits * doubleValue; return <button disabled={disabled || remainingSeconds === 0} key={hits} onClick={() => void onSubmit({ hits })}><strong>{hits}</strong><span>{hits === 1 ? "Treffer" : "Treffer"}</span>{kind === "BOB27" && <em>Neuer Stand {preview}</em>}</button>; })}</div>
+      <p className="engine-help">Die Auswahl wird sofort gespeichert. Danach wechselt die App automatisch zum nächsten Spieler oder Ziel.</p>
+    </div>;
   }
 
-  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") return <div className="visit-entry">{limitPanel}<div className="segment-entry"><label>Single<input type="number" inputMode="numeric" min="0" max="3" value={single} onChange={(event) => setSingle(event.target.value)} /></label><label>Double<input type="number" inputMode="numeric" min="0" max="3" value={double} onChange={(event) => setDouble(event.target.value)} /></label><label>Triple<input type="number" inputMode="numeric" min="0" max="3" value={triple} onChange={(event) => setTriple(event.target.value)} /></label></div><button className="button" disabled={disabled || remainingSeconds === 0} onClick={() => void onSubmit({ single: Number(single), double: Number(double), triple: Number(triple) })}>Aufnahme speichern</button></div>;
+  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") {
+    return <div className="competition-engine competition-engine-segments">
+      {limitPanel}<div className="engine-kicker">Treffer auf {state?.target ?? "das aktuelle Ziel"}</div>
+      <div className="segment-entry">
+        {[{ label: "Single", value: single, set: setSingle }, { label: "Doppel", value: double, set: setDouble }, { label: "Triple", value: triple, set: setTriple }].map((item) => <label key={item.label}><span>{item.label}</span><input type="number" inputMode="numeric" min="0" max="3" value={item.value} onChange={(event) => item.set(event.target.value)} /></label>)}
+      </div>
+      <button className="button full engine-submit" disabled={disabled || remainingSeconds === 0} onClick={() => void onSubmit({ single: Number(single), double: Number(double), triple: Number(triple) })}>Aufnahme speichern</button>
+    </div>;
+  }
 
-  if (kind === "X01") return <div className="visit-entry">{limitPanel}<div className="numeric-result"><input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Score 0–180" /></div><div className="score-quick-grid">{[26, 41, 45, 60, 81, 100, 140, 180].map((value) => <button type="button" disabled={disabled || remainingSeconds === 0} key={value} onClick={() => void submitScore({}, value)}>{value}</button>)}</div><label className="checkout-confirm"><input type="checkbox" checked={checkout} onChange={(event) => setCheckout(event.target.checked)} /> Mit Doppel ausgecheckt</label><button className="button" disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore({ checkout })}>Aufnahme speichern</button></div>;
+  if (kind === "X01") {
+    return <div className="competition-engine competition-engine-score">
+      {limitPanel}<div className="engine-kicker">Score eingeben</div>
+      <div className="engine-score-entry"><label>Aufnahme<input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="0–180" /></label></div>
+      <div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 140, 180].map((value) => <button type="button" disabled={disabled || remainingSeconds === 0} key={value} onClick={() => setScore(String(value))}>{value}</button>)}</div>
+      <button type="button" className={`engine-checkout-toggle ${checkout ? "is-active" : ""}`} disabled={disabled} onClick={() => setCheckout((value) => !value)}><span>{checkout ? "✓" : "○"}</span> Mit Doppel ausgecheckt</button>
+      <button className="button full engine-submit" disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore({ checkout })}>Aufnahme speichern</button>
+    </div>;
+  }
 
-  if (kind === "SCORING" || resultType === "SCORE_0_TO_180") return <div className="visit-entry">{limitPanel}<div className="numeric-result"><input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Score 0–180" /></div><div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 140, 180].map((value) => <button type="button" disabled={disabled || remainingSeconds === 0} key={value} onClick={() => void submitScore({}, value)}>{value}</button>)}</div><button className="button" disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore()}>Aufnahme speichern</button></div>;
+  if (kind === "SCORING" || resultType === "SCORE_0_TO_180") {
+    return <div className="competition-engine competition-engine-score">
+      {limitPanel}<div className="engine-kicker">Score dieser Aufnahme</div>
+      <div className="engine-score-entry"><label>Score<input type="number" inputMode="numeric" min="0" max="180" value={score} onChange={(event) => setScore(event.target.value)} placeholder="0–180" /></label></div>
+      <div className="score-quick-grid">{[0, 26, 41, 45, 60, 81, 100, 140, 180].map((value) => <button type="button" disabled={disabled || remainingSeconds === 0} key={value} onClick={() => setScore(String(value))}>{value}</button>)}</div>
+      <button className="button full engine-submit" disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore()}>Aufnahme speichern</button>
+    </div>;
+  }
 
-  return <div className="visit-entry">{limitPanel}<div className="numeric-result"><input type="number" inputMode="numeric" min="0" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Wert dieser Aufnahme" /></div><div className="result-button-grid compact"><button disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore()}>Aufnahme speichern</button><button disabled={disabled} onClick={() => void onSubmit({ value: score === "" ? 0 : Number(score), finish: true })}>Übung abschließen</button></div></div>;
+  return <div className="competition-engine competition-engine-custom">
+    {limitPanel}<div className="engine-kicker">Ergebnis dieser Aufnahme</div>
+    <div className="engine-score-entry"><label>Wert<input type="number" inputMode="numeric" min="0" value={score} onChange={(event) => setScore(event.target.value)} placeholder="Ergebnis" /></label></div>
+    <div className="engine-custom-actions"><button className="button" disabled={disabled || score === "" || remainingSeconds === 0} onClick={() => void submitScore()}>Aufnahme speichern</button><button className="button secondary" disabled={disabled} onClick={() => void onSubmit({ value: score === "" ? 0 : Number(score), finish: true })}>Übung abschließen</button></div>
+  </div>;
 }
