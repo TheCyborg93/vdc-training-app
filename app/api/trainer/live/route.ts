@@ -22,11 +22,17 @@ function readProgress(value: unknown): ProgressState | null {
   return { order, exerciseIndex, playerIndex, roundNumber };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const requestedTrainingId = Number(url.searchParams.get("trainingId"));
+    const hasRequestedTraining = Number.isInteger(requestedTrainingId) && requestedTrainingId > 0;
+
     const trainingDay = await prisma.trainingDay.findFirst({
-      where: { status: { in: ["PUBLISHED", "RUNNING"] } },
-      orderBy: [{ trainingDate: "asc" }, { createdAt: "desc" }],
+      where: hasRequestedTraining
+        ? { id: requestedTrainingId }
+        : { status: { in: ["PUBLISHED", "RUNNING"] } },
+      orderBy: hasRequestedTraining ? undefined : [{ trainingDate: "asc" }, { createdAt: "desc" }],
       select: {
         id: true,
         trainingDate: true,
