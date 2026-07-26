@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import TrainingIntelligence, { type TrainingIntelligenceData } from "@/components/coach/TrainingIntelligence";
 import WeeklyChallenge, { type WeeklyChallengeData } from "@/components/coach/WeeklyChallenge";
 import "./styles.css";
+import "./weekly-plan.css";
 
 type Area = { key: string; label: string; value: number; trend: number; samples: number };
 type Recommendation = { area: string; title: string; reason: string; exerciseNames: string[] };
@@ -22,6 +23,7 @@ type Profile = {
 };
 type ResponseData = {
   generatedAt: string;
+  schedule: { sessionsPerWeek: number };
   overview: { players: number; improving: number; declining: number; analyzedResults: number; focus: { label: string; count: number }[] };
   trainingIntelligence: TrainingIntelligenceData;
   profiles: Profile[];
@@ -58,7 +60,7 @@ export default function AiCoachPage() {
         <div>
           <span className="eyebrow">Trainer Intelligence</span>
           <h1>AI Coach</h1>
-          <p>Regelbasierte Leistungsanalyse aus Vereins- und Heimtraining der letzten 90 Tage.</p>
+          <p>Regelbasierte Leistungsanalyse aus Vereins- und Heimtraining der letzten 90 Tage. Der Trainingsfleiß orientiert sich an {data?.schedule.sessionsPerWeek ?? 2} Vereinstrainings pro Woche.</p>
         </div>
         <button className="button secondary" onClick={() => void load()} disabled={loading}>{loading ? "Analysiert …" : "Neu analysieren"}</button>
       </header>
