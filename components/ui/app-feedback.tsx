@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type ToastTone = "success" | "info" | "warning" | "error";
 type Toast = { id: number; title: string; message?: string; tone: ToastTone };
@@ -12,13 +12,23 @@ type FeedbackContextValue = {
 
 const FeedbackContext = createContext<FeedbackContextValue | null>(null);
 
+function inferTone(text: string): ToastTone {
+  const value = text.toLowerCase();
+  if (value.includes("fehl") || value.includes("nicht erreichbar") || value.includes("ungültig")) return "error";
+  if (value.includes("warn") || value.includes("fehlt") || value.includes("zu lang")) return "warning";
+  if (value.includes("gespeichert") || value.includes("erstellt") || value.includes("aktualisiert") || value.includes("gelöscht") || value.includes("abgeschlossen") || value.includes("fortgesetzt")) return "success";
+  return "info";
+}
+
 export function AppFeedbackProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<(ConfirmOptions & { resolve: (value: boolean) => void }) | null>(null);
+  const lastObservedMessage = useRef("");
+  const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const notify = useCallback((title: string, options?: { message?: string; tone?: ToastTone }) => {
     const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((current) => [...current, { id, title, message: options?.message, tone: options?.tone ?? "info" }]);
+    setToasts((current) => [...current.slice(-3), { id, title, message: options?.message, tone: options?.tone ?? "info" }]);
     window.setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 4200);
   }, []);
 
@@ -33,14 +43,45 @@ export function AppFeedbackProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (!dialog) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const timer = window.setTimeout(() => confirmButtonRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeDialog(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [dialog, closeDialog]);
+
+  useEffect(() => {
+    const surfaceMessages = () => {
+      const elements = Array.from(document.querySelectorAll<HTMLElement>(".form-message"));
+      const latest = elements.map((element) => element.textContent?.trim() ?? "").filter(Boolean).at(-1) ?? "";
+      if (!latest || latest === lastObservedMessage.current) return;
+      lastObservedMessage.current = latest;
+      notify(inferTone(latest) === "error" ? "Aktion fehlgeschlagen" : "Status aktualisiert", { message: latest, tone: inferTone(latest) });
+    };
+
+    surfaceMessages();
+    const observer = new MutationObserver(surfaceMessages);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [notify]);
+
   const value = useMemo(() => ({ notify, confirm }), [notify, confirm]);
 
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      <div className="vdc-toast-viewport" aria-live="polite" aria-atomic="true">
+      <div className="vdc-toast-viewport" aria-live="polite" aria-atomic="false">
         {toasts.map((toast) => (
-          <article className={`vdc-toast is-${toast.tone}`} key={toast.id}>
+          <article className={`vdc-toast is-${toast.tone}`} key={toast.id} role="status">
             <span aria-hidden="true" />
             <div><strong>{toast.title}</strong>{toast.message ? <p>{toast.message}</p> : null}</div>
             <button type="button" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))} aria-label="Hinweis schließen">×</button>
@@ -54,7 +95,7 @@ export function AppFeedbackProvider({ children }: { children: ReactNode }) {
             <div><small>{dialog.destructive ? "Kritische Aktion" : "Bestätigung"}</small><h2 id="vdc-dialog-title">{dialog.title}</h2><p id="vdc-dialog-message">{dialog.message}</p></div>
             <footer>
               <button type="button" className="button secondary" onClick={() => closeDialog(false)}>{dialog.cancelLabel ?? "Abbrechen"}</button>
-              <button type="button" className={dialog.destructive ? "button danger" : "button"} onClick={() => closeDialog(true)}>{dialog.confirmLabel ?? "Bestätigen"}</button>
+              <button ref={confirmButtonRef} type="button" className={dialog.destructive ? "button danger" : "button"} onClick={() => closeDialog(true)}>{dialog.confirmLabel ?? "Bestätigen"}</button>
             </footer>
           </section>
         </div>
