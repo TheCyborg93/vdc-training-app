@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useAppFeedback } from "@/components/ui/app-feedback";
 import styles from "./trainer-live.module.css";
@@ -336,7 +337,7 @@ export default function TrainerLivePage() {
               <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
             </header>
             <div className="trainer-board-overview-main">
-              <div className="trainer-board-progress-ring" style={{ "--board-progress": `${board.progressPercent * 3.6}deg` } as React.CSSProperties}>
+              <div className="trainer-board-progress-ring" style={{ "--board-progress": `${board.progressPercent * 3.6}deg` } as CSSProperties}>
                 <strong>{board.progressPercent}%</strong><small>Fortschritt</small>
               </div>
               <div className="trainer-board-overview-copy">
