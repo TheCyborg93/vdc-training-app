@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import TrainingCountdown from "@/components/dashboard/training-countdown";
-import { DashboardActivity, DashboardBoardWall } from "@/components/dashboard/dashboard-live-panels";
+import { DashboardActivity, DashboardBoardWall, DashboardCoachBriefing } from "@/components/dashboard/dashboard-live-panels";
 
 export const dynamic = "force-dynamic";
 export const preferredRegion = "lhr1";
@@ -237,16 +237,7 @@ export default async function TrainerPage() {
       </section>
 
       <section className="vdc-v3-insights-grid">
-        <article className="vdc-v3-coach-card">
-          <header><div><span className="vdc-kicker">Coach Briefing</span><h2>Aktueller Fokus</h2></div><span>AI</span></header>
-          <strong>{recentResults.length >= 5 ? "Genügend neue Daten für eine aktuelle Analyse." : "Weitere Trainingsergebnisse sammeln."}</strong>
-          <p>
-            {recentResults.length >= 5
-              ? "Öffne den AI Coach, um Stärken, Schwächen und die nächste sinnvolle Trainingsausrichtung zu prüfen."
-              : "Mit jedem gespeicherten Ergebnis werden Spielerprofile und Empfehlungen belastbarer."}
-          </p>
-          <Link className="button secondary" href="/trainer/ai-coach">Coach öffnen</Link>
-        </article>
+        <DashboardCoachBriefing />
 
         <DashboardActivity initialResults={initialResults} />
 
