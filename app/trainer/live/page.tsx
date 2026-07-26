@@ -37,6 +37,7 @@ type BoardDetailProps = {
   board: LiveBoard;
   order: number[];
   busy: boolean;
+  now: Date;
   onControl: (board: LiveBoard, action: ControlAction, extra?: Record<string, unknown>) => Promise<void>;
   onMovePlayer: (boardId: number, index: number, direction: -1 | 1) => void;
 };
@@ -58,6 +59,19 @@ function statusDescription(status: string) {
 function minutesSince(value: string | null, now: Date) {
   if (!value) return null;
   return Math.max(0, Math.floor((now.getTime() - new Date(value).getTime()) / 60_000));
+}
+
+function formatDuration(start: string | null, end: string | null, now: Date) {
+  if (!start) return "00:00";
+  const startTime = new Date(start).getTime();
+  const endTime = end ? new Date(end).getTime() : now.getTime();
+  const seconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
 function boardHealth(board: LiveBoard, now: Date): Health {
@@ -97,10 +111,11 @@ function createTimeline(previous: LiveTraining | null, next: LiveTraining): Time
   return events;
 }
 
-function BoardDetail({ board, order, busy, onControl, onMovePlayer }: BoardDetailProps) {
+function BoardDetail({ board, order, busy, now, onControl, onMovePlayer }: BoardDetailProps) {
   const orderedPlayers = order.map((id) => board.players.find((player) => player.id === id)).filter((player): player is Player => Boolean(player));
   const active = board.status === "RUNNING" || board.status === "PAUSED";
   const finalExercise = board.exerciseIndex + 1 >= board.totalExercises;
+  const idleMinutes = minutesSince(board.lastResultAt, now);
 
   return (
     <div className="trainer-focus-content" aria-busy={busy}>
@@ -108,6 +123,10 @@ function BoardDetail({ board, order, busy, onControl, onMovePlayer }: BoardDetai
         <div><span className="trainer-board-label">{board.board.name}</span><h2>{statusLabel(board.status)}</h2><p>{statusDescription(board.status)}</p></div>
         <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
       </header>
+      <section className="trainer-board-timer-grid">
+        <article><small>Board-Laufzeit</small><strong>{formatDuration(board.startedAt, board.completedAt, now)}</strong><span>{board.completedAt ? "beendet" : "seit Start"}</span></article>
+        <article><small>Letzte Eingabe</small><strong>{idleMinutes === null ? "—" : `${idleMinutes} Min.`}</strong><span>{board.resultCount} Ergebnisse</span></article>
+      </section>
       <section className="trainer-live-progress-block trainer-focus-progress">
         <div><small>Trainingsfortschritt</small><strong>{board.progressPercent}%</strong></div>
         <div className="trainer-progress"><span style={{ width: `${board.progressPercent}%` }} /></div>
@@ -239,6 +258,15 @@ export default function TrainerLivePage() {
   const selectedBoard = training?.boards.find((board) => board.id === selectedBoardId) ?? null;
   const selectedIndex = selectedBoard && training ? training.boards.findIndex((board) => board.id === selectedBoard.id) : -1;
   const topBoard = useMemo(() => [...(training?.boards ?? [])].sort((a, b) => b.resultCount - a.resultCount)[0] ?? null, [training]);
+  const attentionBoards = useMemo(() => {
+    return (training?.boards ?? [])
+      .map((board) => ({ board, health: boardHealth(board, clock) }))
+      .filter(({ health }) => health.level === "critical" || health.level === "warning" || health.level === "waiting")
+      .sort((a, b) => {
+        const priority = { critical: 0, warning: 1, waiting: 2, good: 3, done: 4 } as const;
+        return priority[a.health.level] - priority[b.health.level];
+      });
+  }, [training, clock]);
 
   async function requestConfirmation(board: LiveBoard, action: ControlAction) {
     if (action === "finish_exercise") {
@@ -317,7 +345,7 @@ export default function TrainerLivePage() {
         </section>
         <section className="trainer-completion-grid">
           <article className="trainer-completion-highlight"><span className="vdc-kicker">Aktivstes Board</span><h2>{topBoard?.board.name ?? "—"}</h2><strong>{topBoard?.resultCount ?? 0} Ergebnisse</strong><p>Die Kennzahl zeigt ausschließlich die Anzahl gespeicherter Ergebnisdatensätze.</p></article>
-          <article className="trainer-completion-board-list"><header><div><span className="vdc-kicker">Boardübersicht</span><h2>Abschlussstatus</h2></div><strong>{summary.completed}/{training.boards.length}</strong></header><div>{training.boards.map((board) => <div key={board.id}><span className="trainer-completion-board-status">✓</span><div><strong>{board.board.name}</strong><small>{board.players.length} Spieler · {board.totalExercises} Übungen</small></div><b>{board.resultCount}</b></div>)}</div></article>
+          <article className="trainer-completion-board-list"><header><div><span className="vdc-kicker">Boardübersicht</span><h2>Abschlussstatus</h2></div><strong>{summary.completed}/{training.boards.length}</strong></header><div>{training.boards.map((board) => <div key={board.id}><span className="trainer-completion-board-status">✓</span><div><strong>{board.board.name}</strong><small>{board.players.length} Spieler · {board.totalExercises} Übungen · {formatDuration(board.startedAt, board.completedAt, clock)}</small></div><b>{board.resultCount}</b></div>)}</div></article>
         </section>
       </main>
     );
@@ -331,7 +359,7 @@ export default function TrainerLivePage() {
       </header>
       <section className="trainer-cockpit-overview">
         <article className="trainer-cockpit-progress"><div><span className="vdc-kicker">Training läuft</span><strong>{summary.averageProgress}%</strong><p>{summary.completed} von {training.boards.length} Boards abgeschlossen</p></div><div className="trainer-cockpit-bar"><span style={{ width: `${summary.averageProgress}%` }} /></div></article>
-        <div className="trainer-cockpit-metrics"><article><small>Vergangene Zeit</small><strong>{timing.elapsed} Min.</strong><span>von {timing.planned} Minuten</span></article><article><small>Restzeit geplant</small><strong>{timing.remaining} Min.</strong><span>{timing.remaining === 0 && timing.elapsed > timing.planned ? "Planzeit überschritten" : "bis Planende"}</span></article><article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gesamt gespeichert</span></article></div>
+        <div className="trainer-cockpit-metrics"><article><small>Vergangene Zeit</small><strong>{timing.elapsed} Min.</strong><span>von {timing.planned} Minuten</span></article><article><small>Restzeit geplant</small><strong>{timing.remaining} Min.</strong><span>{timing.remaining === 0 && timing.elapsed > timing.planned ? "Planzeit überschritten" : "bis Planende"}</span></article><article><small>Offene Boards</small><strong>{training.boards.length - summary.completed}</strong><span>noch abzuschließen</span></article></div>
         <div className="trainer-cockpit-actions"><button className="button secondary" disabled={bulkBusy || summary.running === 0} onClick={() => void bulkControl("pause_all")}>Alle Boards pausieren</button><button className="button" disabled={bulkBusy || summary.paused === 0} onClick={() => void bulkControl("resume_all")}>Alle Boards fortsetzen</button></div>
       </section>
       <section className="trainer-live-summary"><article><small>Laufende Boards</small><strong>{summary.running}</strong><span>aktive Gruppen</span></article><article><small>Pausierte Boards</small><strong>{summary.paused}</strong><span>Stand gespeichert</span></article><article><small>Wartende Boards</small><strong>{summary.waiting}</strong><span>noch nicht gestartet</span></article><article><small>Abgeschlossen</small><strong>{summary.completed}</strong><span>fertige Boards</span></article><article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gespeicherte Einträge</span></article></section>
@@ -343,7 +371,7 @@ export default function TrainerLivePage() {
             {training.boards.map((board) => {
               const health = boardHealth(board, clock);
               return <article className={`trainer-live-card trainer-board-overview status-${board.status.toLowerCase()} health-${health.level}`} key={board.id} aria-busy={busyBoardId === board.id}>
-                <header className="trainer-live-card-head"><div><span className="trainer-board-label">{board.board.name}</span><h2>{statusLabel(board.status)}</h2></div><span className={`trainer-health-badge is-${health.level}`}><i />{health.label}</span></header>
+                <header className="trainer-live-card-head"><div><span className="trainer-board-label">{board.board.name}</span><h2>{formatDuration(board.startedAt, board.completedAt, clock)}</h2></div><span className={`trainer-health-badge is-${health.level}`}><i />{health.label}</span></header>
                 <div className="trainer-board-health-detail">{health.detail}</div>
                 <div className="trainer-board-overview-main"><div className="trainer-board-progress-ring" style={{ "--board-progress": `${board.progressPercent * 3.6}deg` } as CSSProperties}><strong>{board.progressPercent}%</strong><small>Fortschritt</small></div><div className="trainer-board-overview-copy"><small>Aktuelle Übung</small><strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong><span>{board.currentPlayer?.displayName ?? "Kein aktiver Spieler"}</span></div></div>
                 <div className="trainer-board-overview-meta"><span>Übung {board.status === "COMPLETED" ? board.totalExercises : Math.min(board.exerciseIndex + 1, board.totalExercises)} / {board.totalExercises}</span><span>{board.players.length} Spieler</span><span>{board.resultCount} Ergebnisse</span></div>
@@ -352,9 +380,15 @@ export default function TrainerLivePage() {
             })}
           </section>
         </div>
-        <aside className="trainer-cockpit-timeline"><header><div><span className="vdc-kicker">Live Timeline</span><h2>Aktivitäten</h2></div><span>{timeline.length}</span></header><div>{timeline.map((item) => <article className={`is-${item.tone}`} key={item.id}><time>{item.time.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><div><strong>{item.board}</strong><p>{item.text}</p></div></article>)}{timeline.length === 0 && <p className="vdc-empty-line">Änderungen erscheinen hier automatisch.</p>}</div></aside>
+        <aside className="trainer-cockpit-side-stack">
+          <section className="trainer-attention-center">
+            <header><div><span className="vdc-kicker">Trainer-Radar</span><h2>Aufmerksamkeit</h2></div><span>{attentionBoards.length}</span></header>
+            <div>{attentionBoards.map(({ board, health }) => <button key={board.id} className={`is-${health.level}`} onClick={() => setSelectedBoardId(board.id)}><i /><div><strong>{board.board.name}</strong><p>{health.detail}</p></div><span>Öffnen →</span></button>)}{attentionBoards.length === 0 && <p className="vdc-empty-line">Alle aktiven Boards laufen aktuell unauffällig.</p>}</div>
+          </section>
+          <section className="trainer-cockpit-timeline"><header><div><span className="vdc-kicker">Live Timeline</span><h2>Aktivitäten</h2></div><span>{timeline.length}</span></header><div>{timeline.map((item) => <article className={`is-${item.tone}`} key={item.id}><time>{item.time.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><div><strong>{item.board}</strong><p>{item.text}</p></div></article>)}{timeline.length === 0 && <p className="vdc-empty-line">Änderungen erscheinen hier automatisch.</p>}</div></section>
+        </aside>
       </section>
-      {selectedBoard && <div className="trainer-focus-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}><aside className="trainer-focus-drawer" role="dialog" aria-modal="true" aria-label={`${selectedBoard.board.name} steuern`}><div className="trainer-focus-toolbar"><div className="trainer-focus-navigation"><button onClick={() => selectRelativeBoard(-1)} aria-label="Vorheriges Board">←</button><span>{selectedIndex + 1} / {training.boards.length}</span><button onClick={() => selectRelativeBoard(1)} aria-label="Nächstes Board">→</button></div><button className="trainer-focus-close" onClick={() => setSelectedBoardId(null)} aria-label="Fokusansicht schließen">×</button></div><BoardDetail board={selectedBoard} order={orders[selectedBoard.id] ?? selectedBoard.players.map((player) => player.id)} busy={busyBoardId === selectedBoard.id} onControl={control} onMovePlayer={movePlayer} /></aside></div>}
+      {selectedBoard && <div className="trainer-focus-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}><aside className="trainer-focus-drawer" role="dialog" aria-modal="true" aria-label={`${selectedBoard.board.name} steuern`}><div className="trainer-focus-toolbar"><div className="trainer-focus-navigation"><button onClick={() => selectRelativeBoard(-1)} aria-label="Vorheriges Board">←</button><span>{selectedIndex + 1} / {training.boards.length}</span><button onClick={() => selectRelativeBoard(1)} aria-label="Nächstes Board">→</button></div><button className="trainer-focus-close" onClick={() => setSelectedBoardId(null)} aria-label="Fokusansicht schließen">×</button></div><BoardDetail board={selectedBoard} order={orders[selectedBoard.id] ?? selectedBoard.players.map((player) => player.id)} busy={busyBoardId === selectedBoard.id} now={clock} onControl={control} onMovePlayer={movePlayer} /></aside></div>}
     </main>
   );
 }
