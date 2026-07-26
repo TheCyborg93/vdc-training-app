@@ -1,4 +1,11 @@
 type BalanceItem = { key: string; label: string; count: number; percentage: number };
+type WeeklyPlanItem = {
+  session: number;
+  title: string;
+  focus: string;
+  purpose: string;
+  exercises: string[];
+};
 
 export type TrainingIntelligenceData = {
   periodDays: number;
@@ -6,6 +13,7 @@ export type TrainingIntelligenceData = {
   undertrained: BalanceItem[];
   overtrained: BalanceItem[];
   recommendation: string;
+  weeklyPlan: WeeklyPlanItem[];
 };
 
 export default function TrainingIntelligence({ data }: { data: TrainingIntelligenceData }) {
@@ -27,6 +35,22 @@ export default function TrainingIntelligence({ data }: { data: TrainingIntellige
             </div>
           );
         })}
+      </div>
+      <div className="coach-week-plan">
+        <div className="coach-week-plan-heading">
+          <span className="eyebrow">2 Trainingstage pro Woche</span>
+          <h3>Empfohlene Aufteilung der nächsten Woche</h3>
+        </div>
+        <div className="coach-week-plan-grid">
+          {data.weeklyPlan.map((item) => (
+            <article key={item.session}>
+              <small>Termin {item.session}</small>
+              <h4>{item.title}</h4>
+              <p>{item.purpose}</p>
+              <div>{item.exercises.map((exercise) => <span key={exercise}>{exercise}</span>)}</div>
+            </article>
+          ))}
+        </div>
       </div>
     </section>
   );
