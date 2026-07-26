@@ -7,8 +7,19 @@ type Player = { id: number; displayName: string; skillLevel: number | null };
 type Board = { id: number; name: string; location: string | null };
 type Assignment = { boardId: number; playerId: number; position: number };
 type TrainingDay = { id: number; trainingDate: string; status: string; trainingPlan: Plan; assignments: { id: number; board: Board; player: Player }[] };
-
 type ApiData = { plans: Plan[]; players: Player[]; boards: Board[]; trainingDays: TrainingDay[] };
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    PLANNED: "Geplant",
+    PUBLISHED: "Veröffentlicht",
+    RUNNING: "Läuft",
+    PAUSED: "Pausiert",
+    COMPLETED: "Abgeschlossen",
+    CANCELLED: "Abgesagt",
+  };
+  return labels[status] ?? status;
+}
 
 export default function PublishTrainingDayPage() {
   const [data, setData] = useState<ApiData>({ plans: [], players: [], boards: [], trainingDays: [] });
@@ -55,8 +66,8 @@ export default function PublishTrainingDayPage() {
     const selectedPlayers = data.players
       .filter((player) => playerIds.includes(player.id))
       .sort((a, b) => (b.skillLevel ?? 0) - (a.skillLevel ?? 0));
-
     const groups = boardIds.map((boardId) => ({ boardId, players: [] as Player[] }));
+
     selectedPlayers.forEach((player, index) => {
       const cycle = Math.floor(index / groups.length);
       const groupIndex = cycle % 2 === 0 ? index % groups.length : groups.length - 1 - (index % groups.length);
@@ -99,11 +110,15 @@ export default function PublishTrainingDayPage() {
 
   return (
     <main className="dashboard-page">
-      <section className="dashboard-heading">
-        <div><div className="eyebrow">Trainerbereich</div><h1>Trainingstag veröffentlichen</h1><p>Plan, Boards und anwesende Spieler auswählen und logisch verteilen.</p></div>
-      </section>
+      <header className="vdc-page-heading">
+        <div><span className="vdc-kicker">Trainingsorganisation</span><h1>Trainingstag veröffentlichen</h1><p>Trainingsplan auswählen, anwesende Spieler erfassen und die Boards übersichtlich zuweisen.</p></div>
+      </header>
 
-      {loading ? <div className="card"><p>Daten werden geladen …</p></div> : (
+      {loading ? (
+        <section className="vdc-page-skeleton" aria-label="Trainingstag wird geladen">
+          <div className="skeleton-card" /><div className="skeleton-card" /><div className="skeleton-card" />
+        </section>
+      ) : (
         <section className="publish-layout">
           <div className="card publish-settings">
             <div className="section-heading"><div><span className="eyebrow">Schritt 1</span><h2>Grunddaten</h2></div></div>
@@ -112,32 +127,32 @@ export default function PublishTrainingDayPage() {
             {selectedPlan && <div className="plan-summary"><strong>{selectedPlan.title}</strong><span>{selectedPlan.goal} · {selectedPlan.durationMin} Minuten · {selectedPlan.exercises.length} Übungen</span></div>}
 
             <div className="section-heading compact"><div><span className="eyebrow">Schritt 2</span><h2>Boards wählen</h2></div></div>
-            <div className="selection-grid">{data.boards.map((board) => <label className={`selection-card ${boardIds.includes(board.id) ? "is-selected" : ""}`} key={board.id}><input type="checkbox" checked={boardIds.includes(board.id)} onChange={() => toggleId(board.id, boardIds, setBoardIds)} /><strong>{board.name}</strong><span>{board.location || "Kein Standort"}</span></label>)}</div>
+            <div className="selection-grid">{data.boards.map((board) => <label className={`selection-card ${boardIds.includes(board.id) ? "is-selected" : ""}`} key={board.id}><input type="checkbox" checked={boardIds.includes(board.id)} onChange={() => toggleId(board.id, boardIds, setBoardIds)} /><strong>{board.name}</strong><span>{board.location || "Vereinsheim"}</span></label>)}</div>
 
             <div className="section-heading compact"><div><span className="eyebrow">Schritt 3</span><h2>Spieler wählen</h2></div></div>
-            <div className="selection-grid">{data.players.map((player) => <label className={`selection-card ${playerIds.includes(player.id) ? "is-selected" : ""}`} key={player.id}><input type="checkbox" checked={playerIds.includes(player.id)} onChange={() => toggleId(player.id, playerIds, setPlayerIds)} /><strong>{player.displayName}</strong><span>{player.skillLevel ? `Stufe ${player.skillLevel}` : "Ohne Einstufung"}</span></label>)}</div>
+            <div className="selection-grid">{data.players.map((player) => <label className={`selection-card ${playerIds.includes(player.id) ? "is-selected" : ""}`} key={player.id}><input type="checkbox" checked={playerIds.includes(player.id)} onChange={() => toggleId(player.id, playerIds, setPlayerIds)} /><strong>{player.displayName}</strong><span>{playerIds.includes(player.id) ? "Anwesend" : "Auswählen"}</span></label>)}</div>
             <button className="button secondary full" type="button" onClick={generateAssignments}>Spieler automatisch verteilen</button>
           </div>
 
           <section>
             <div className="section-heading"><div><span className="eyebrow">Schritt 4</span><h2>Verteilung prüfen</h2></div></div>
-            {!assignments.length ? <div className="card"><p>Nach Auswahl der Boards und Spieler wird hier die automatische Verteilung angezeigt.</p></div> : <div className="assignment-board-grid">{boardIds.map((boardId) => {
+            {!assignments.length ? <div className="vdc-empty-state compact"><strong>Noch keine Board-Zuweisung</strong><p>Wähle Boards und Spieler aus und starte anschließend die automatische Verteilung.</p></div> : <div className="assignment-board-grid">{boardIds.map((boardId) => {
               const board = data.boards.find((item) => item.id === boardId);
               const boardAssignments = assignments.filter((item) => item.boardId === boardId).sort((a, b) => a.position - b.position);
               return <article className="assignment-board" key={boardId}><div className="assignment-board-head"><div><span className="eyebrow">Board</span><h3>{board?.name}</h3></div><strong>{boardAssignments.length} Spieler</strong></div>{boardAssignments.map((assignment) => {
                 const player = data.players.find((item) => item.id === assignment.playerId);
-                return <div className="assignment-player" key={assignment.playerId}><span>{assignment.position}</span><strong>{player?.displayName}</strong><select value={assignment.boardId} onChange={(event) => movePlayer(assignment.playerId, Number(event.target.value))}>{boardIds.map((targetId) => <option value={targetId} key={targetId}>{data.boards.find((item) => item.id === targetId)?.name}</option>)}</select></div>;
+                return <div className="assignment-player" key={assignment.playerId}><span>{assignment.position}</span><strong>{player?.displayName}</strong><select aria-label={`Board für ${player?.displayName}`} value={assignment.boardId} onChange={(event) => movePlayer(assignment.playerId, Number(event.target.value))}>{boardIds.map((targetId) => <option value={targetId} key={targetId}>{data.boards.find((item) => item.id === targetId)?.name}</option>)}</select></div>;
               })}</article>;
             })}</div>}
-            <button className="button full publish-button" disabled={saving || !trainingPlanId || !trainingDate || assignments.length !== playerIds.length} onClick={publish}>{saving ? "Veröffentlicht …" : "Trainingstag bestätigen und veröffentlichen"}</button>
-            {message && <p className="form-message">{message}</p>}
+            <button className="button full publish-button" disabled={saving || !trainingPlanId || !trainingDate || assignments.length !== playerIds.length} onClick={publish}>{saving ? "Wird veröffentlicht …" : "Trainingstag bestätigen und veröffentlichen"}</button>
+            {message && <p className={`form-message ${message.includes("veröffentlicht") ? "success-message" : ""}`}>{message}</p>}
           </section>
         </section>
       )}
 
       <section className="section-block">
-        <div className="section-heading"><div><span className="eyebrow">Veröffentlicht</span><h2>Letzte Trainingstage</h2></div></div>
-        <div className="saved-plan-grid">{data.trainingDays.length === 0 ? <div className="card"><p>Noch kein Trainingstag veröffentlicht.</p></div> : data.trainingDays.map((day) => <article className="saved-plan-card" key={day.id}><span className="status">{day.status}</span><h3>{day.trainingPlan.title}</h3><p>{new Date(day.trainingDate).toLocaleString("de-DE")} · {new Set(day.assignments.map((item) => item.board.id)).size} Boards · {day.assignments.length} Spieler</p></article>)}</div>
+        <div className="section-heading"><div><span className="eyebrow">Übersicht</span><h2>Letzte Trainingstage</h2></div></div>
+        <div className="saved-plan-grid">{data.trainingDays.length === 0 ? <div className="vdc-empty-state compact"><strong>Noch kein Trainingstag veröffentlicht</strong><p>Veröffentlichte Trainingstage erscheinen anschließend an dieser Stelle.</p></div> : data.trainingDays.map((day) => <article className="saved-plan-card" key={day.id}><span className={`status status-${day.status.toLowerCase()}`}>{statusLabel(day.status)}</span><h3>{day.trainingPlan.title}</h3><p>{new Date(day.trainingDate).toLocaleString("de-DE")} · {new Set(day.assignments.map((item) => item.board.id)).size} Boards · {day.assignments.length} Spieler</p></article>)}</div>
       </section>
     </main>
   );
