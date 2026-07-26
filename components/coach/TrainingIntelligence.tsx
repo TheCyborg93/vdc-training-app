@@ -1,3 +1,9 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAppFeedback } from "@/components/ui/app-feedback";
+
 type BalanceItem = { key: string; label: string; count: number; percentage: number };
 type WeeklyPlanItem = {
   session: number;
@@ -17,6 +23,44 @@ export type TrainingIntelligenceData = {
 };
 
 export default function TrainingIntelligence({ data }: { data: TrainingIntelligenceData }) {
+  const router = useRouter();
+  const { notify } = useAppFeedback();
+  const [creatingSession, setCreatingSession] = useState<number | null>(null);
+
+  async function createDraft(item: WeeklyPlanItem) {
+    setCreatingSession(item.session);
+    try {
+      const response = await fetch("/api/trainer/ai-coach/create-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `AI Coach · Training ${item.session} · ${item.focus}`,
+          focus: item.focus,
+          exercises: item.exercises,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Entwurf konnte nicht erstellt werden.");
+
+      const missing = Array.isArray(result.missingExercises) && result.missingExercises.length
+        ? ` ${result.missingExercises.length} Empfehlung${result.missingExercises.length === 1 ? " wurde" : "en wurden"} nicht gefunden.`
+        : "";
+      notify("Trainingsplan-Entwurf erstellt", {
+        message: `„${result.plan.title}“ wurde mit ${result.plan.durationMin} Minuten gespeichert.${missing}`,
+        tone: missing ? "warning" : "success",
+      });
+      router.push("/trainer/trainingsplaene");
+      router.refresh();
+    } catch (error) {
+      notify("Entwurf konnte nicht erstellt werden", {
+        message: error instanceof Error ? error.message : "Unbekannter Fehler.",
+        tone: "error",
+      });
+    } finally {
+      setCreatingSession(null);
+    }
+  }
+
   return (
     <section className="coach-intelligence card">
       <header>
@@ -48,6 +92,14 @@ export default function TrainingIntelligence({ data }: { data: TrainingIntellige
               <h4>{item.title}</h4>
               <p>{item.purpose}</p>
               <div>{item.exercises.map((exercise) => <span key={exercise}>{exercise}</span>)}</div>
+              <button
+                className="button secondary coach-create-plan"
+                type="button"
+                disabled={creatingSession !== null}
+                onClick={() => void createDraft(item)}
+              >
+                {creatingSession === item.session ? "Entwurf wird erstellt …" : "Als Entwurf erstellen"}
+              </button>
             </article>
           ))}
         </div>
