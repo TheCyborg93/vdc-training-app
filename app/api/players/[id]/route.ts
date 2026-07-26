@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const preferredRegion = "lhr1";
+
 function parseId(value: string) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
@@ -12,21 +14,34 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!id) return NextResponse.json({ error: "Ungültige Spieler-ID." }, { status: 400 });
 
   const body = await request.json();
-  const data: {
-    firstName?: string;
-    lastName?: string;
-    displayName?: string;
-    skillLevel?: number | null;
-    active?: boolean;
-  } = {};
+  const data: { firstName?: string; lastName?: string; displayName?: string; skillLevel?: null; active?: boolean } = {};
 
-  if (body.firstName !== undefined) data.firstName = String(body.firstName).trim();
-  if (body.lastName !== undefined) data.lastName = String(body.lastName).trim();
-  if (body.displayName !== undefined) data.displayName = String(body.displayName).trim();
-  if (body.skillLevel !== undefined) data.skillLevel = body.skillLevel === "" || body.skillLevel == null ? null : Number(body.skillLevel);
+  if (body.firstName !== undefined) {
+    const firstName = String(body.firstName).trim();
+    if (!firstName) return NextResponse.json({ error: "Der Vorname darf nicht leer sein." }, { status: 400 });
+    data.firstName = firstName;
+  }
+
+  if (body.dartName !== undefined || body.displayName !== undefined) {
+    const dartName = String(body.dartName ?? body.displayName).trim();
+    if (!dartName) return NextResponse.json({ error: "Der Dartname darf nicht leer sein." }, { status: 400 });
+    const duplicate = await prisma.player.findFirst({
+      where: { id: { not: id }, displayName: { equals: dartName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (duplicate) return NextResponse.json({ error: "Dieser Dartname ist bereits vergeben." }, { status: 409 });
+    data.displayName = dartName;
+  }
+
   if (body.active !== undefined) data.active = Boolean(body.active);
+  data.lastName = "";
+  data.skillLevel = null;
 
-  const player = await prisma.player.update({ where: { id }, data });
+  const player = await prisma.player.update({
+    where: { id },
+    data,
+    select: { id: true, firstName: true, displayName: true, active: true },
+  });
   return NextResponse.json(player);
 }
 
@@ -38,8 +53,8 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   const linkedData = await prisma.player.findUnique({
     where: { id },
     select: {
-      _count: { select: { results: true, trainingDayPlayers: true, boardAssignments: true, homePlans: true } }
-    }
+      _count: { select: { results: true, trainingDayPlayers: true, boardAssignments: true, homePlans: true } },
+    },
   });
 
   if (!linkedData) return NextResponse.json({ error: "Spieler nicht gefunden." }, { status: 404 });
