@@ -1,7 +1,8 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppFeedback } from "@/components/ui/app-feedback";
 import styles from "./trainer-live.module.css";
 
@@ -72,6 +73,9 @@ function boardHealth(board: LiveBoard, now: Date): Health {
 function createTimeline(previous: LiveTraining | null, next: LiveTraining): TimelineItem[] {
   if (!previous) return [{ id: `load-${Date.now()}`, time: new Date(), board: "Training", text: "Live Center verbunden", tone: "info" }];
   const events: TimelineItem[] = [];
+  if (previous.status !== next.status && next.status === "COMPLETED") {
+    events.push({ id: `training-completed-${Date.now()}`, time: new Date(), board: "Training", text: "Trainingstag vollständig abgeschlossen", tone: "success" });
+  }
   for (const board of next.boards) {
     const before = previous.boards.find((item) => item.id === board.id);
     if (!before) continue;
@@ -145,16 +149,21 @@ export default function TrainerLivePage() {
   const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [clock, setClock] = useState(new Date());
+  const trainingIdRef = useRef<number | null>(null);
+  const trainingStatusRef = useRef<string | null>(null);
 
   async function loadLiveData(silent = false) {
     try {
-      const response = await fetch("/api/trainer/live", { cache: "no-store" });
+      const query = trainingIdRef.current ? `?trainingId=${trainingIdRef.current}` : "";
+      const response = await fetch(`/api/trainer/live${query}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Live-Daten konnten nicht geladen werden.");
       setTraining((current) => {
         if (data) {
           const events = createTimeline(current, data as LiveTraining);
           if (events.length) setTimeline((items) => [...events, ...items].slice(0, 16));
+          trainingIdRef.current = data.id;
+          trainingStatusRef.current = data.status;
         }
         return data;
       });
@@ -184,7 +193,9 @@ export default function TrainerLivePage() {
 
   useEffect(() => {
     void loadLiveData();
-    const timer = window.setInterval(() => { if (document.visibilityState === "visible" && busyBoardId === null && !bulkBusy) void loadLiveData(true); }, 5000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && busyBoardId === null && !bulkBusy && trainingStatusRef.current !== "COMPLETED") void loadLiveData(true);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [busyBoardId, bulkBusy]);
 
@@ -201,6 +212,7 @@ export default function TrainerLivePage() {
 
   const summary = useMemo(() => {
     const boards = training?.boards ?? [];
+    const playerIds = new Set(boards.flatMap((board) => board.players.map((player) => player.id)));
     const averageProgress = boards.length ? Math.round(boards.reduce((sum, board) => sum + board.progressPercent, 0) / boards.length) : 0;
     return {
       running: boards.filter((board) => board.status === "RUNNING").length,
@@ -208,20 +220,25 @@ export default function TrainerLivePage() {
       paused: boards.filter((board) => board.status === "PAUSED").length,
       completed: boards.filter((board) => board.status === "COMPLETED").length,
       results: boards.reduce((sum, board) => sum + board.resultCount, 0),
+      players: playerIds.size,
       averageProgress,
     };
   }, [training]);
 
   const timing = useMemo(() => {
-    const starts = (training?.boards ?? []).map((board) => board.startedAt).filter((value): value is string => Boolean(value)).map((value) => new Date(value).getTime());
+    const boards = training?.boards ?? [];
+    const starts = boards.map((board) => board.startedAt).filter((value): value is string => Boolean(value)).map((value) => new Date(value).getTime());
+    const completions = boards.map((board) => board.completedAt).filter((value): value is string => Boolean(value)).map((value) => new Date(value).getTime());
     const startedAt = starts.length ? Math.min(...starts) : null;
-    const elapsed = startedAt ? Math.max(0, Math.floor((clock.getTime() - startedAt) / 60_000)) : 0;
+    const endedAt = training?.status === "COMPLETED" && completions.length ? Math.max(...completions) : clock.getTime();
+    const elapsed = startedAt ? Math.max(0, Math.floor((endedAt - startedAt) / 60_000)) : 0;
     const planned = training?.trainingPlan.durationMin ?? 0;
     return { elapsed, remaining: Math.max(0, planned - elapsed), planned };
   }, [training, clock]);
 
   const selectedBoard = training?.boards.find((board) => board.id === selectedBoardId) ?? null;
   const selectedIndex = selectedBoard && training ? training.boards.findIndex((board) => board.id === selectedBoard.id) : -1;
+  const topBoard = useMemo(() => [...(training?.boards ?? [])].sort((a, b) => b.resultCount - a.resultCount)[0] ?? null, [training]);
 
   async function requestConfirmation(board: LiveBoard, action: ControlAction) {
     if (action === "finish_exercise") {
@@ -284,22 +301,41 @@ export default function TrainerLivePage() {
   if (loading) return <main className={`${styles.root} dashboard-page`}><section className="trainer-live-loading" aria-label="Live Center wird geladen"><div /><div /><div /></section></main>;
   if (!training) return <main className={`${styles.root} dashboard-page`}><section className="vdc-empty-state trainer-live-empty"><span aria-hidden="true">◎</span><strong>Kein Live-Training aktiv</strong><p>{message || "Aktuell ist kein Trainingstag veröffentlicht oder gestartet."}</p><button className="button secondary" onClick={() => void loadLiveData()}>Erneut prüfen</button></section></main>;
 
+  if (training.status === "COMPLETED") {
+    return (
+      <main className={`${styles.root} dashboard-page trainer-live-page trainer-completion-page`}>
+        <section className="trainer-completion-hero">
+          <span className="trainer-completion-check" aria-hidden="true">✓</span>
+          <div><span className="vdc-kicker">Training beendet</span><h1>{training.trainingPlan.title}</h1><p>{new Date(training.trainingDate).toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })} · {training.trainingPlan.goal}</p></div>
+          <div className="trainer-completion-actions"><Link className="button" href="/trainer/archiv">Im Archiv auswerten</Link><Link className="button secondary" href="/trainer/statistiken">Statistiken öffnen</Link><Link className="button ghost" href="/trainer">Zum Dashboard</Link></div>
+        </section>
+        <section className="trainer-completion-kpis">
+          <article><small>Dauer</small><strong>{timing.elapsed}</strong><span>Minuten</span></article>
+          <article><small>Spieler</small><strong>{summary.players}</strong><span>Teilnehmende</span></article>
+          <article><small>Boards</small><strong>{summary.completed}</strong><span>abgeschlossen</span></article>
+          <article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gespeichert</span></article>
+        </section>
+        <section className="trainer-completion-grid">
+          <article className="trainer-completion-highlight"><span className="vdc-kicker">Aktivstes Board</span><h2>{topBoard?.board.name ?? "—"}</h2><strong>{topBoard?.resultCount ?? 0} Ergebnisse</strong><p>Die Kennzahl zeigt ausschließlich die Anzahl gespeicherter Ergebnisdatensätze.</p></article>
+          <article className="trainer-completion-board-list"><header><div><span className="vdc-kicker">Boardübersicht</span><h2>Abschlussstatus</h2></div><strong>{summary.completed}/{training.boards.length}</strong></header><div>{training.boards.map((board) => <div key={board.id}><span className="trainer-completion-board-status">✓</span><div><strong>{board.board.name}</strong><small>{board.players.length} Spieler · {board.totalExercises} Übungen</small></div><b>{board.resultCount}</b></div>)}</div></article>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className={`${styles.root} dashboard-page trainer-live-page trainer-cockpit-page`}>
       <header className="vdc-page-heading trainer-live-heading">
         <div><span className="vdc-kicker">Trainersteuerung</span><h1>Live Center</h1><p>{training.trainingPlan.title} · {training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten</p></div>
         <div className="trainer-live-refresh"><span><i />Automatische Aktualisierung</span><small>{lastUpdated ? `Stand ${lastUpdated.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Wird geladen"}</small><button className="button secondary" disabled={busyBoardId !== null || bulkBusy} onClick={() => void loadLiveData()}>Jetzt aktualisieren</button></div>
       </header>
-
       <section className="trainer-cockpit-overview">
         <article className="trainer-cockpit-progress"><div><span className="vdc-kicker">Training läuft</span><strong>{summary.averageProgress}%</strong><p>{summary.completed} von {training.boards.length} Boards abgeschlossen</p></div><div className="trainer-cockpit-bar"><span style={{ width: `${summary.averageProgress}%` }} /></div></article>
         <div className="trainer-cockpit-metrics"><article><small>Vergangene Zeit</small><strong>{timing.elapsed} Min.</strong><span>von {timing.planned} Minuten</span></article><article><small>Restzeit geplant</small><strong>{timing.remaining} Min.</strong><span>{timing.remaining === 0 && timing.elapsed > timing.planned ? "Planzeit überschritten" : "bis Planende"}</span></article><article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gesamt gespeichert</span></article></div>
         <div className="trainer-cockpit-actions"><button className="button secondary" disabled={bulkBusy || summary.running === 0} onClick={() => void bulkControl("pause_all")}>Alle Boards pausieren</button><button className="button" disabled={bulkBusy || summary.paused === 0} onClick={() => void bulkControl("resume_all")}>Alle Boards fortsetzen</button></div>
       </section>
-
       <section className="trainer-live-summary"><article><small>Laufende Boards</small><strong>{summary.running}</strong><span>aktive Gruppen</span></article><article><small>Pausierte Boards</small><strong>{summary.paused}</strong><span>Stand gespeichert</span></article><article><small>Wartende Boards</small><strong>{summary.waiting}</strong><span>noch nicht gestartet</span></article><article><small>Abgeschlossen</small><strong>{summary.completed}</strong><span>fertige Boards</span></article><article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gespeicherte Einträge</span></article></section>
       {message && <p className="form-message trainer-live-message">{message}</p>}
-
       <section className="trainer-cockpit-layout">
         <div className="trainer-cockpit-board-area">
           <nav className="trainer-board-switcher" aria-label="Board auswählen">{training.boards.map((board) => <button key={board.id} className={selectedBoardId === board.id ? "is-active" : ""} onClick={() => setSelectedBoardId(board.id)}><i className={`status-${board.status.toLowerCase()}`} /><span>{board.board.name}</span><small>{board.progressPercent}%</small></button>)}</nav>
@@ -318,7 +354,6 @@ export default function TrainerLivePage() {
         </div>
         <aside className="trainer-cockpit-timeline"><header><div><span className="vdc-kicker">Live Timeline</span><h2>Aktivitäten</h2></div><span>{timeline.length}</span></header><div>{timeline.map((item) => <article className={`is-${item.tone}`} key={item.id}><time>{item.time.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time><div><strong>{item.board}</strong><p>{item.text}</p></div></article>)}{timeline.length === 0 && <p className="vdc-empty-line">Änderungen erscheinen hier automatisch.</p>}</div></aside>
       </section>
-
       {selectedBoard && <div className="trainer-focus-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}><aside className="trainer-focus-drawer" role="dialog" aria-modal="true" aria-label={`${selectedBoard.board.name} steuern`}><div className="trainer-focus-toolbar"><div className="trainer-focus-navigation"><button onClick={() => selectRelativeBoard(-1)} aria-label="Vorheriges Board">←</button><span>{selectedIndex + 1} / {training.boards.length}</span><button onClick={() => selectRelativeBoard(1)} aria-label="Nächstes Board">→</button></div><button className="trainer-focus-close" onClick={() => setSelectedBoardId(null)} aria-label="Fokusansicht schließen">×</button></div><BoardDetail board={selectedBoard} order={orders[selectedBoard.id] ?? selectedBoard.players.map((player) => player.id)} busy={busyBoardId === selectedBoard.id} onControl={control} onMovePlayer={movePlayer} /></aside></div>}
     </main>
   );
