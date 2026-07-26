@@ -2,19 +2,34 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const preferredRegion = "lhr1";
 
 function errorResponse(error: unknown) {
   console.error("Player API error:", error);
   return NextResponse.json(
-    { error: "Die Datenbank ist aktuell nicht erreichbar. Bitte prüfe die Vercel-Umgebungsvariablen DATABASE_URL und DIRECT_URL." },
-    { status: 500 }
+    { error: "Die Spielerdaten konnten aktuell nicht geladen oder gespeichert werden." },
+    { status: 500 },
   );
 }
 
 export async function GET() {
   try {
     const players = await prisma.player.findMany({
-      orderBy: [{ active: "desc" }, { displayName: "asc" }]
+      orderBy: [{ active: "desc" }, { displayName: "asc" }],
+      select: {
+        id: true,
+        firstName: true,
+        displayName: true,
+        active: true,
+        createdAt: true,
+        _count: {
+          select: {
+            results: true,
+            homeResults: true,
+            trainingDayPlayers: true,
+          },
+        },
+      },
     });
     return NextResponse.json(players);
   } catch (error) {
@@ -26,26 +41,32 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const firstName = String(body.firstName ?? "").trim();
-    const lastName = String(body.lastName ?? "").trim();
-    const displayName = String(body.displayName ?? "").trim() || `${firstName} ${lastName}`.trim();
-    const skillLevel = body.skillLevel === "" || body.skillLevel == null ? null : Number(body.skillLevel);
+    const dartName = String(body.dartName ?? body.displayName ?? "").trim();
 
-    if (!firstName || !lastName || !displayName) {
+    if (!firstName || !dartName) {
       return NextResponse.json(
-        { error: "Vorname, Nachname und Anzeigename sind erforderlich." },
-        { status: 400 }
+        { error: "Vorname und Dartname sind erforderlich." },
+        { status: 400 },
       );
     }
 
-    if (skillLevel !== null && (!Number.isInteger(skillLevel) || skillLevel < 1 || skillLevel > 10)) {
-      return NextResponse.json(
-        { error: "Die Leistungsstufe muss zwischen 1 und 10 liegen." },
-        { status: 400 }
-      );
+    const duplicate = await prisma.player.findFirst({
+      where: { displayName: { equals: dartName, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (duplicate) {
+      return NextResponse.json({ error: "Dieser Dartname ist bereits vergeben." }, { status: 409 });
     }
 
     const player = await prisma.player.create({
-      data: { firstName, lastName, displayName, skillLevel, active: true }
+      data: {
+        firstName,
+        lastName: "",
+        displayName: dartName,
+        skillLevel: null,
+        active: true,
+      },
+      select: { id: true, firstName: true, displayName: true, active: true },
     });
 
     return NextResponse.json(player, { status: 201 });
