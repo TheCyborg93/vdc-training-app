@@ -10,10 +10,11 @@ import "./vdc-responsive.css";
 import "./training-result-grid.css";
 import "./game121.css";
 import "./training-archive.css";
+import "./vdc-os.css";
 
 export const metadata: Metadata = {
-  title: "VDC Training",
-  description: "Digitale Trainingsplattform des Vestischen Dartclubs",
+  title: "VDC Training OS",
+  description: "Digitale Trainingsplattform des Vestischen Dart Club e.V.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
