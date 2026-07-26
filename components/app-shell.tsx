@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type IconName = "dashboard" | "calendar" | "plans" | "home" | "exercises" | "players" | "boards" | "live" | "archive" | "stats" | "login" | "switch";
+type IconName = "dashboard" | "calendar" | "plans" | "home" | "exercises" | "players" | "boards" | "live" | "archive" | "stats" | "system" | "login" | "switch";
 type NavItem = { href: string; label: string; icon: IconName };
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -23,6 +23,7 @@ const trainerGroups: NavGroup[] = [
     { href: "/trainer/boards", label: "Boards", icon: "boards" },
   ] },
   { label: "Analyse", items: [{ href: "/trainer/archiv", label: "Archiv & Statistiken", icon: "archive" }] },
+  { label: "System", items: [{ href: "/trainer/system", label: "Systeminformationen", icon: "system" }] },
 ];
 
 const playerGroups: NavGroup[] = [
@@ -48,6 +49,7 @@ const pageNames: Record<string, string> = {
   "/trainer/spieler": "Spieler",
   "/trainer/boards": "Boards",
   "/trainer/archiv": "Archiv & Statistiken",
+  "/trainer/system": "Systeminformationen",
 };
 
 type TrainerSession = { authenticated: boolean; trainer: { name: string; role: "TRAINER" | "ADMIN" } | null };
@@ -66,6 +68,7 @@ function Icon({ name }: { name: IconName }) {
     live: <><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13"/></>,
     archive: <><path d="M4 7h16v13H4zM3 3h18v4H3z"/><path d="M9 11h6"/></>,
     stats: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+    system: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2v-4h.09A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2h4v.09A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 8c.15.38.36.72.6 1 .3.35.7.55 1.1.6h.09v4h-.09c-.4.05-.8.25-1.1.6-.24.28-.45.62-.6 1Z"/></>,
     login: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M14 3h7v18h-7"/></>,
     switch: <><path d="M7 7h11l-3-3M17 17H6l3 3"/></>,
   };
@@ -132,46 +135,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </Link>
           <button className="vdc-collapse" type="button" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Navigation ausklappen" : "Navigation einklappen"}>‹</button>
         </div>
-
         <div className="vdc-role-badge"><span/>{trainerMode ? "Trainerzentrale" : "Spielerbereich"}</div>
-
         <nav className="vdc-nav" aria-label={trainerMode ? "Trainernavigation" : "Spielernavigation"}>
-          {groups.map((group) => <div className="vdc-nav-group" key={group.label}>
-            <small>{group.label}</small>
-            {group.items.map((item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
-              return <Link key={item.href} href={item.href} className={active ? "is-active" : ""} title={collapsed ? item.label : undefined}>
-                <span className="vdc-nav-icon"><Icon name={item.icon}/>{item.icon === "live" && <i className="vdc-live-dot"/>}</span><b>{item.label}</b>
-              </Link>;
-            })}
-          </div>)}
+          {groups.map((group) => <div className="vdc-nav-group" key={group.label}><small>{group.label}</small>{group.items.map((item) => {
+            const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return <Link key={item.href} href={item.href} className={active ? "is-active" : ""} title={collapsed ? item.label : undefined}><span className="vdc-nav-icon"><Icon name={item.icon}/>{item.icon === "live" && <i className="vdc-live-dot"/>}</span><b>{item.label}</b></Link>;
+          })}</div>)}
         </nav>
-
         <div className="vdc-sidebar-bottom">
           {trainerMode ? <Link href="/" className="vdc-area-switch"><Icon name="switch"/><span><small>Bereich wechseln</small><strong>Zur Spielerseite</strong></span></Link> : session.authenticated ? <Link href="/trainer" className="vdc-area-switch is-authorized"><Icon name="switch"/><span><small>{session.trainer?.role === "ADMIN" ? "Administrator" : "Trainer"}</small><strong>Trainerbereich</strong></span></Link> : <Link href="/login" className="vdc-area-switch"><Icon name="login"/><span><small>Geschützter Bereich</small><strong>Trainer-Login</strong></span></Link>}
           <div className="vdc-profile"><span className="vdc-avatar">{profileLabel.slice(0, 2).toUpperCase()}</span><div><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small><strong>{profileLabel}</strong></div>{session.authenticated ? <button type="button" onClick={() => void logout()} aria-label="Abmelden">×</button> : null}</div>
         </div>
       </aside>
-
-      <section className="vdc-stage">
-        <header className="vdc-topbar">
-          <div className="vdc-page-context"><small>{trainerMode ? "Trainerbereich" : "Spielerbereich"} <span>/</span> {pageTitle}</small><strong>{pageTitle}</strong></div>
-          <div className="vdc-topbar-meta">
-            <span className="vdc-date">{dateLabel}</span>
-            <span className={`vdc-health is-${health}`} title={latency !== null ? `Datenbankantwort: ${latency} ms` : "Systemstatus"}><i/>{health === "checking" ? "Prüfung" : health === "online" ? `Online${latency !== null ? ` · ${latency} ms` : ""}` : "Offline"}</span>
-            <span className="vdc-top-profile"><b>{profileLabel}</b><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small></span>
-          </div>
-        </header>
-        <div className="vdc-content">{children}</div>
-      </section>
-
-      <nav className="vdc-mobile-nav" aria-label="Mobile Navigation">
-        {groups.flatMap((group) => group.items).slice(0, 4).map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
-          return <Link key={item.href} href={item.href} className={active ? "is-active" : ""}><Icon name={item.icon}/><small>{item.label}</small></Link>;
-        })}
-        {trainerMode ? <Link href="/"><Icon name="switch"/><small>Spieler</small></Link> : session.authenticated ? <Link href="/trainer"><Icon name="switch"/><small>Trainer</small></Link> : <Link href="/login"><Icon name="login"/><small>Login</small></Link>}
-      </nav>
+      <section className="vdc-stage"><header className="vdc-topbar"><div className="vdc-page-context"><small>{trainerMode ? "Trainerbereich" : "Spielerbereich"} <span>/</span> {pageTitle}</small><strong>{pageTitle}</strong></div><div className="vdc-topbar-meta"><span className="vdc-date">{dateLabel}</span><span className={`vdc-health is-${health}`} title={latency !== null ? `Datenbankantwort: ${latency} ms` : "Systemstatus"}><i/>{health === "checking" ? "Prüfung" : health === "online" ? `Online${latency !== null ? ` · ${latency} ms` : ""}` : "Offline"}</span><span className="vdc-top-profile"><b>{profileLabel}</b><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small></span></div></header><div className="vdc-content">{children}</div></section>
+      <nav className="vdc-mobile-nav" aria-label="Mobile Navigation">{groups.flatMap((group) => group.items).slice(0, 4).map((item) => { const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} className={active ? "is-active" : ""}><Icon name={item.icon}/><small>{item.label}</small></Link>; })}{trainerMode ? <Link href="/"><Icon name="switch"/><small>Spieler</small></Link> : session.authenticated ? <Link href="/trainer"><Icon name="switch"/><small>Trainer</small></Link> : <Link href="/login"><Icon name="login"/><small>Login</small></Link>}</nav>
     </div>
   );
 }
