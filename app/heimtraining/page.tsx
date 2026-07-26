@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ExerciseResultInput from "@/components/training/ExerciseResultInput";
 import TrainingReportView, { type TrainingReportData } from "@/components/training/TrainingReportView";
+import { useAppFeedback } from "@/components/ui/app-feedback";
 import type { PlayerExerciseState } from "@/lib/exercise-session-engine";
 
 type Player = { id: number; displayName: string };
@@ -12,7 +13,6 @@ type Plan = { id: number; playerId: number; title: string; goal: string; duratio
 type StoredState = { exerciseIndex: number; exerciseState: PlayerExerciseState };
 type SavedResult = { id: number; exerciseId: number; roundNumber: number; calculatedScore: number | null; exercise?: { name: string } };
 type Session = { id: number; homeTrainingPlanId: number; playerId: number; status: string; exerciseIndex: number; stateJson: unknown; plan?: Plan; results?: SavedResult[] };
-
 type LiveMetric = { label: string; value: string };
 
 const goals = ["Scoring", "Doppel", "Checkout", "Stellen", "Mental", "Konstanz", "Wurftechnik", "Matchtraining"];
@@ -35,46 +35,31 @@ function liveMetrics(state: PlayerExerciseState, exerciseIndex: number, exercise
   const visit = data.visit ?? 1;
   const darts = data.dartsThrown ?? Math.max(0, visit - 1) * 3;
 
-  if (kind === "BOB27") {
-    return [
-      { label: "Doppel-Fortschritt", value: `${Math.min(21, (data.targetIndex ?? 0) + 1)} / 21` },
-      { label: "Aufnahme", value: String(visit) },
-      { label: "Darts", value: String(darts) },
-    ];
-  }
-
-  if (kind === "X01") {
-    return [
-      { label: "Restscore", value: String(data.score ?? 501) },
-      { label: "Aufnahme", value: String(visit) },
-      { label: "Darts", value: String(darts) },
-    ];
-  }
-
-  if (kind === "SCORING" || kind === "TIME_BASED") {
-    return [
-      { label: "Aufnahmen", value: String(Math.max(0, visit - 1)) },
-      { label: "Darts", value: String(darts) },
-      { label: "Gespeichert", value: String(historyCount) },
-    ];
-  }
-
-  if (kind.startsWith("AROUND_")) {
-    return [
-      { label: "Zielposition", value: String((data.targetIndex ?? 0) + 1) },
-      { label: "Aufnahme", value: String(visit) },
-      { label: "Darts", value: String(darts) },
-    ];
-  }
-
-  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") {
-    return [
-      { label: "Aktuelle Zahl", value: data.target ?? "–" },
-      { label: "Gesamtstand", value: String(data.score ?? 0) },
-      { label: "Aufnahme", value: String(visit) },
-    ];
-  }
-
+  if (kind === "BOB27") return [
+    { label: "Doppel-Fortschritt", value: `${Math.min(21, (data.targetIndex ?? 0) + 1)} / 21` },
+    { label: "Aufnahme", value: String(visit) },
+    { label: "Darts", value: String(darts) },
+  ];
+  if (kind === "X01") return [
+    { label: "Restscore", value: String(data.score ?? 501) },
+    { label: "Aufnahme", value: String(visit) },
+    { label: "Darts", value: String(darts) },
+  ];
+  if (kind === "SCORING" || kind === "TIME_BASED") return [
+    { label: "Aufnahmen", value: String(Math.max(0, visit - 1)) },
+    { label: "Darts", value: String(darts) },
+    { label: "Gespeichert", value: String(historyCount) },
+  ];
+  if (kind.startsWith("AROUND_")) return [
+    { label: "Zielposition", value: String((data.targetIndex ?? 0) + 1) },
+    { label: "Aufnahme", value: String(visit) },
+    { label: "Darts", value: String(darts) },
+  ];
+  if (kind === "SHANGHAI" || kind === "JDC_CHALLENGE") return [
+    { label: "Aktuelle Zahl", value: data.target ?? "–" },
+    { label: "Gesamtstand", value: String(data.score ?? 0) },
+    { label: "Aufnahme", value: String(visit) },
+  ];
   return [
     { label: "Übung", value: `${exerciseIndex + 1} / ${exerciseCount}` },
     { label: "Aufnahme", value: String(visit) },
@@ -83,6 +68,7 @@ function liveMetrics(state: PlayerExerciseState, exerciseIndex: number, exercise
 }
 
 export default function HomeTrainingPage() {
+  const { confirm, notify } = useAppFeedback();
   const [players, setPlayers] = useState<Player[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -101,32 +87,39 @@ export default function HomeTrainingPage() {
 
   async function load(selected?: number | "") {
     const id = selected || playerId;
-    const response = await fetch(`/api/home-training${id ? `?playerId=${id}` : ""}`, { cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) { setMessage(data.error ?? "Heimtraining konnte nicht geladen werden."); return; }
-    setPlayers(data.players ?? []);
-    setExercises(data.exercises ?? []);
-    setPlans(data.plans ?? []);
+    try {
+      const response = await fetch(`/api/home-training${id ? `?playerId=${id}` : ""}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Heimtraining konnte nicht geladen werden.");
+      setPlayers(data.players ?? []);
+      setExercises(data.exercises ?? []);
+      setPlans(data.plans ?? []);
 
-    if (!id && data.players?.length) {
-      const firstId = data.players[0].id;
-      setPlayerId(firstId);
-      await load(firstId);
-      return;
-    }
+      if (!id && data.players?.length) {
+        const firstId = data.players[0].id;
+        setPlayerId(firstId);
+        await load(firstId);
+        return;
+      }
 
-    const active = data.activeSession as Session | null;
-    if (active) {
-      const stored = readState(active.stateJson);
-      const plan = (data.plans ?? []).find((item: Plan) => item.id === active.homeTrainingPlanId) ?? active.plan ?? null;
-      setSession(active);
-      setActivePlan(plan);
-      setHistory(active.results ?? []);
-      if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
-      setRunning(active.status === "RUNNING");
-      setMessage(active.status === "PAUSED" ? "Dein pausiertes Training ist gespeichert." : "Dein laufendes Training wurde wiederhergestellt.");
-    } else {
-      setSession(null); setActivePlan(null); setHistory([]); setRunning(false); setExerciseState(null); setExerciseIndex(0);
+      const active = data.activeSession as Session | null;
+      if (active) {
+        const stored = readState(active.stateJson);
+        const plan = (data.plans ?? []).find((item: Plan) => item.id === active.homeTrainingPlanId) ?? active.plan ?? null;
+        setSession(active);
+        setActivePlan(plan);
+        setHistory(active.results ?? []);
+        if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
+        setRunning(active.status === "RUNNING");
+        const restoredMessage = active.status === "PAUSED" ? "Dein pausiertes Training ist gespeichert." : "Dein laufendes Training wurde wiederhergestellt.";
+        setMessage(restoredMessage);
+      } else {
+        setSession(null); setActivePlan(null); setHistory([]); setRunning(false); setExerciseState(null); setExerciseIndex(0);
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Heimtraining konnte nicht geladen werden.";
+      setMessage(text);
+      notify("Heimtraining nicht verfügbar", { message: text, tone: "error" });
     }
   }
 
@@ -143,7 +136,12 @@ export default function HomeTrainingPage() {
     if (!playerId) return;
     const matching = exercises.filter((exercise) => exercise.categories.some((link) => link.category.name.toLowerCase() === goal.toLowerCase()));
     const pool = matching.length ? matching : exercises;
-    if (!pool.length) { setMessage("Für dieses Ziel sind noch keine Übungen verfügbar."); return; }
+    if (!pool.length) {
+      const text = "Für dieses Ziel sind noch keine Übungen verfügbar.";
+      setMessage(text);
+      notify("Kein Plan möglich", { message: text, tone: "warning" });
+      return;
+    }
     const items: PlanItem[] = [];
     let remaining = duration;
     let index = 0;
@@ -154,11 +152,18 @@ export default function HomeTrainingPage() {
       remaining -= minutes;
       index += 1;
     }
-    const response = await fetch("/api/home-training", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, title: `${goal}-Heimtraining · ${duration} Minuten`, goal, durationMin: duration, items }) });
-    const data = await response.json();
-    if (!response.ok) { setMessage(data.error ?? "Plan konnte nicht erstellt werden."); return; }
-    setMessage("Dein Heimtrainingsplan wurde erstellt.");
-    await load(playerId);
+    try {
+      const response = await fetch("/api/home-training", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, title: `${goal}-Heimtraining · ${duration} Minuten`, goal, durationMin: duration, items }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Plan konnte nicht erstellt werden.");
+      setMessage("Dein Heimtrainingsplan wurde erstellt.");
+      notify("Heimtrainingsplan erstellt", { message: `${goal} · ${duration} Minuten`, tone: "success" });
+      await load(playerId);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Plan konnte nicht erstellt werden.";
+      setMessage(text);
+      notify("Plan konnte nicht erstellt werden", { message: text, tone: "error" });
+    }
   }
 
   async function startPlan(plan: Plan) {
@@ -172,9 +177,14 @@ export default function HomeTrainingPage() {
       const stored = readState(data.session.stateJson);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       setRunning(data.session.status === "RUNNING");
-      setMessage(data.resumed ? "Training fortgesetzt." : "Training gestartet.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Start fehlgeschlagen."); }
-    finally { setSaving(false); }
+      const text = data.resumed ? "Training fortgesetzt." : "Training gestartet.";
+      setMessage(text);
+      notify(data.resumed ? "Heimtraining fortgesetzt" : "Heimtraining gestartet", { message: plan.title, tone: "success" });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Start fehlgeschlagen.";
+      setMessage(text);
+      notify("Heimtraining konnte nicht starten", { message: text, tone: "error" });
+    } finally { setSaving(false); }
   }
 
   async function sessionAction(action: "pause" | "resume" | "finish" | "cancel") {
@@ -189,17 +199,42 @@ export default function HomeTrainingPage() {
       if (action === "finish" && data.report) {
         setReport(data.report as TrainingReportData);
         setMessage("");
+        notify("Heimtraining abgeschlossen", { message: "Dein Trainingsbericht ist bereit.", tone: "success" });
       } else {
-        setMessage(action === "pause" ? "Training pausiert und gespeichert." : action === "resume" ? "Training fortgesetzt." : "Training abgeschlossen.");
+        const text = action === "pause" ? "Training pausiert und gespeichert." : action === "resume" ? "Training fortgesetzt." : "Training abgeschlossen.";
+        setMessage(text);
+        notify(action === "pause" ? "Heimtraining pausiert" : action === "resume" ? "Heimtraining fortgesetzt" : "Heimtraining abgeschlossen", { message: text, tone: "success" });
       }
       if (action === "cancel") await load(playerId);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Aktion fehlgeschlagen."); }
-    finally { setSaving(false); }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Aktion fehlgeschlagen.";
+      setMessage(text);
+      notify("Aktion fehlgeschlagen", { message: text, tone: "error" });
+    } finally { setSaving(false); }
+  }
+
+  async function finishTraining() {
+    if (!session) return;
+    const accepted = await confirm({
+      title: "Heimtraining beenden?",
+      message: "Das Training wird mit dem aktuellen Stand abgeschlossen. Danach wird direkt dein vollständiger Trainingsbericht angezeigt.",
+      confirmLabel: "Training beenden",
+      cancelLabel: "Weiter trainieren",
+      destructive: true,
+    });
+    if (accepted) await sessionAction("finish");
   }
 
   async function undoLastVisit() {
     if (!session || history.length === 0) return;
-    if (!window.confirm("Die letzte Aufnahme wirklich rückgängig machen?")) return;
+    const accepted = await confirm({
+      title: "Letzte Aufnahme zurücknehmen?",
+      message: "Die zuletzt gespeicherte Aufnahme wird entfernt und der vorherige Übungsstand wiederhergestellt.",
+      confirmLabel: "Aufnahme zurücknehmen",
+      cancelLabel: "Behalten",
+      destructive: true,
+    });
+    if (!accepted) return;
     setSaving(true); setMessage(""); setReport(null);
     try {
       const response = await fetch("/api/home-training/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "undo", sessionId: session.id }) });
@@ -211,8 +246,12 @@ export default function HomeTrainingPage() {
       setHistory((current) => current.filter((item) => item.id !== data.undoneResultId));
       setRunning(true);
       setMessage("Letzte Aufnahme wurde zurückgenommen.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Rückgängig fehlgeschlagen."); }
-    finally { setSaving(false); }
+      notify("Aufnahme zurückgenommen", { message: "Der vorherige Übungsstand wurde wiederhergestellt.", tone: "success" });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Rückgängig fehlgeschlagen.";
+      setMessage(text);
+      notify("Rückgängig fehlgeschlagen", { message: text, tone: "error" });
+    } finally { setSaving(false); }
   }
 
   async function saveVisit(value: Record<string, unknown>) {
@@ -230,80 +269,47 @@ export default function HomeTrainingPage() {
         setRunning(false);
         setReport(data.report as TrainingReportData);
         setMessage("");
+        notify("Heimtraining abgeschlossen", { message: "Dein Trainingsbericht ist bereit.", tone: "success" });
       } else if (data.exerciseCompleted) {
         setMessage("Übung abgeschlossen. Die nächste Übung startet direkt.");
+        notify("Übung abgeschlossen", { message: "Die nächste Übung startet direkt.", tone: "success" });
       } else {
         setMessage(`Gespeichert. Weiter mit ${stored?.exerciseState.target ?? `Aufnahme ${stored?.exerciseState.visit ?? ""}`}.`);
       }
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden."); }
-    finally { setSaving(false); }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : "Aufnahme konnte nicht gespeichert werden.";
+      setMessage(text);
+      notify("Aufnahme nicht gespeichert", { message: text, tone: "error" });
+    } finally { setSaving(false); }
   }
 
-  if (report) {
-    return <div className="training-focus-overlay"><TrainingReportView report={report} onClose={() => { setReport(null); void load(playerId); }} /></div>;
-  }
+  if (report) return <div className="training-focus-overlay"><TrainingReportView report={report} onClose={() => { setReport(null); void load(playerId); }} /></div>;
 
   if (focusActive && activePlan && session && currentExercise && exerciseState) {
     const metrics = liveMetrics(exerciseState, exerciseIndex, planItems.length, history.length);
     const state = exerciseState as PlayerExerciseState & { score?: number; visit?: number; target?: string; dartsThrown?: number };
-
     return (
       <div className="training-focus-overlay result-grid-overlay">
         <main className="training-result-shell">
           <header className="training-result-header">
-            <div>
-              <small>Heimtraining · Übung {exerciseIndex + 1} von {planItems.length}</small>
-              <strong>{currentExercise.name}</strong>
-            </div>
-            <div className="competition-header-actions">
-              <span>{progressPercent}%</span>
-              <button disabled={saving} onClick={() => void sessionAction("finish")}>Beenden</button>
-            </div>
+            <div><small>Heimtraining · Übung {exerciseIndex + 1} von {planItems.length}</small><strong>{currentExercise.name}</strong></div>
+            <div className="competition-header-actions"><span>{progressPercent}%</span><button disabled={saving} onClick={() => void finishTraining()}>Beenden</button></div>
           </header>
-
           <section className="training-result-grid">
-            <article className="result-grid-score">
-              <small>Aktueller Punktestand</small>
-              <strong>{state.score ?? "–"}</strong>
-              <span>Aufnahme {state.visit ?? 1}</span>
-            </article>
-
-            <article className="result-grid-target">
-              <small>Aktuelles Ziel</small>
-              <strong>{state.target ?? currentExercise.name}</strong>
-              <span>{state.dartsThrown ?? 0} Darts gespielt</span>
-            </article>
-
-            <article className="result-grid-player">
-              <small>Wer ist dran?</small>
-              <strong>{selectedPlayer?.displayName ?? "Spieler"}</strong>
-              <span>{session.status === "PAUSED" ? "Training pausiert" : "Du bist am Zug"}</span>
-            </article>
-
+            <article className="result-grid-score"><small>Aktueller Punktestand</small><strong>{state.score ?? "–"}</strong><span>Aufnahme {state.visit ?? 1}</span></article>
+            <article className="result-grid-target"><small>Aktuelles Ziel</small><strong>{state.target ?? currentExercise.name}</strong><span>{state.dartsThrown ?? 0} Darts gespielt</span></article>
+            <article className="result-grid-player"><small>Wer ist dran?</small><strong>{selectedPlayer?.displayName ?? "Spieler"}</strong><span>{session.status === "PAUSED" ? "Training pausiert" : "Du bist am Zug"}</span></article>
             <article className="result-grid-free competition-live-panel">
-              <div className="competition-live-heading">
-                <div><small>Übung</small><strong>{currentExercise.name}</strong></div>
-                <span>{activePlan.goal}</span>
-              </div>
-              <div className="competition-live-metrics">
-                {metrics.map((metric) => <div key={metric.label}><small>{metric.label}</small><strong>{metric.value}</strong></div>)}
-              </div>
+              <div className="competition-live-heading"><div><small>Übung</small><strong>{currentExercise.name}</strong></div><span>{activePlan.goal}</span></div>
+              <div className="competition-live-metrics">{metrics.map((metric) => <div key={metric.label}><small>{metric.label}</small><strong>{metric.value}</strong></div>)}</div>
               <div className="result-grid-progress"><span style={{ width: `${progressPercent}%` }} /></div>
             </article>
-
             <section className="result-grid-engine">
-              {running ? (
-                <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} />
-              ) : (
-                <div className="result-grid-paused"><strong>Training pausiert</strong><span>Der aktuelle Stand ist sicher in der Datenbank gespeichert.</span></div>
-              )}
+              {running ? <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} /> : <div className="result-grid-paused"><strong>Training pausiert</strong><span>Der aktuelle Stand ist sicher in der Datenbank gespeichert.</span></div>}
             </section>
-
             <footer className="result-grid-undo competition-control-row">
               <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
-              {running
-                ? <button className="button" disabled={saving} onClick={() => void sessionAction("pause")}>Training pausieren</button>
-                : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+              {running ? <button className="button" disabled={saving} onClick={() => void sessionAction("pause")}>Training pausieren</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
               {message && <p className="form-message">{message}</p>}
             </footer>
           </section>
