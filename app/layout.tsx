@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AppShell from "@/components/app-shell";
+import Providers from "./providers";
 import "./globals.css";
 import "./steel-ui.css";
 import "./club-ui.css";
@@ -14,6 +15,7 @@ import "./vdc-os.css";
 import "./vdc-sprint2.css";
 import "./competition-premium.css";
 import "./vdc-sprint4.css";
+import "./vdc-production.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
@@ -24,7 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="de">
       <body>
-        <AppShell>{children}</AppShell>
+        <Providers><AppShell>{children}</AppShell></Providers>
       </body>
     </html>
   );
