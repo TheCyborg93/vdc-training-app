@@ -83,10 +83,15 @@ export default function HomeTrainingPage() {
   const [report, setReport] = useState<TrainingReportData | null>(null);
   const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [filterGoal, setFilterGoal] = useState("Alle");
+  const [search, setSearch] = useState("");
+  const [showCreator, setShowCreator] = useState(false);
 
   async function load(selected?: number | "") {
     const id = selected || playerId;
+    setLoading(true);
     try {
       const response = await fetch(`/api/home-training${id ? `?playerId=${id}` : ""}`, { cache: "no-store" });
       const data = await response.json();
@@ -111,8 +116,7 @@ export default function HomeTrainingPage() {
         setHistory(active.results ?? []);
         if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
         setRunning(active.status === "RUNNING");
-        const restoredMessage = active.status === "PAUSED" ? "Dein pausiertes Training ist gespeichert." : "Dein laufendes Training wurde wiederhergestellt.";
-        setMessage(restoredMessage);
+        setMessage(active.status === "PAUSED" ? "Dein pausiertes Training ist gespeichert." : "Dein laufendes Training wurde wiederhergestellt.");
       } else {
         setSession(null); setActivePlan(null); setHistory([]); setRunning(false); setExerciseState(null); setExerciseIndex(0);
       }
@@ -120,6 +124,8 @@ export default function HomeTrainingPage() {
       const text = error instanceof Error ? error.message : "Heimtraining konnte nicht geladen werden.";
       setMessage(text);
       notify("Heimtraining nicht verfügbar", { message: text, tone: "error" });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -130,7 +136,18 @@ export default function HomeTrainingPage() {
   const currentExercise = exercises.find((exercise) => exercise.id === Number(currentItem?.exerciseId));
   const selectedPlayer = players.find((player) => player.id === playerId);
   const progressPercent = Math.round(((exerciseIndex + 1) / Math.max(planItems.length, 1)) * 100);
-  const focusActive = Boolean(activePlan && session && currentExercise && exerciseState);
+  const focusActive = Boolean(running && activePlan && session && currentExercise && exerciseState);
+  const availableGoals = useMemo(() => ["Alle", ...Array.from(new Set(plans.map((plan) => plan.goal)))], [plans]);
+  const filteredPlans = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return plans.filter((plan) => {
+      const matchesGoal = filterGoal === "Alle" || plan.goal === filterGoal;
+      const matchesSearch = !term || plan.title.toLowerCase().includes(term) || plan.goal.toLowerCase().includes(term);
+      return matchesGoal && matchesSearch;
+    });
+  }, [plans, filterGoal, search]);
+  const totalMinutes = plans.reduce((sum, plan) => sum + plan.durationMin, 0);
+  const uniqueGoals = new Set(plans.map((plan) => plan.goal)).size;
 
   async function createOwnPlan() {
     if (!playerId) return;
@@ -152,18 +169,20 @@ export default function HomeTrainingPage() {
       remaining -= minutes;
       index += 1;
     }
+    setSaving(true);
     try {
       const response = await fetch("/api/home-training", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, title: `${goal}-Heimtraining · ${duration} Minuten`, goal, durationMin: duration, items }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Plan konnte nicht erstellt werden.");
       setMessage("Dein Heimtrainingsplan wurde erstellt.");
+      setShowCreator(false);
       notify("Heimtrainingsplan erstellt", { message: `${goal} · ${duration} Minuten`, tone: "success" });
       await load(playerId);
     } catch (error) {
       const text = error instanceof Error ? error.message : "Plan konnte nicht erstellt werden.";
       setMessage(text);
       notify("Plan konnte nicht erstellt werden", { message: text, tone: "error" });
-    }
+    } finally { setSaving(false); }
   }
 
   async function startPlan(plan: Plan) {
@@ -215,25 +234,13 @@ export default function HomeTrainingPage() {
 
   async function finishTraining() {
     if (!session) return;
-    const accepted = await confirm({
-      title: "Heimtraining beenden?",
-      message: "Das Training wird mit dem aktuellen Stand abgeschlossen. Danach wird direkt dein vollständiger Trainingsbericht angezeigt.",
-      confirmLabel: "Training beenden",
-      cancelLabel: "Weiter trainieren",
-      destructive: true,
-    });
+    const accepted = await confirm({ title: "Heimtraining beenden?", message: "Das Training wird mit dem aktuellen Stand abgeschlossen. Danach wird direkt dein vollständiger Trainingsbericht angezeigt.", confirmLabel: "Training beenden", cancelLabel: "Weiter trainieren", destructive: true });
     if (accepted) await sessionAction("finish");
   }
 
   async function undoLastVisit() {
     if (!session || history.length === 0) return;
-    const accepted = await confirm({
-      title: "Letzte Aufnahme zurücknehmen?",
-      message: "Die zuletzt gespeicherte Aufnahme wird entfernt und der vorherige Übungsstand wiederhergestellt.",
-      confirmLabel: "Aufnahme zurücknehmen",
-      cancelLabel: "Behalten",
-      destructive: true,
-    });
+    const accepted = await confirm({ title: "Letzte Aufnahme zurücknehmen?", message: "Die zuletzt gespeicherte Aufnahme wird entfernt und der vorherige Übungsstand wiederhergestellt.", confirmLabel: "Aufnahme zurücknehmen", cancelLabel: "Behalten", destructive: true });
     if (!accepted) return;
     setSaving(true); setMessage(""); setReport(null);
     try {
@@ -266,9 +273,7 @@ export default function HomeTrainingPage() {
       const stored = readState(data.state);
       if (stored) { setExerciseIndex(stored.exerciseIndex); setExerciseState(stored.exerciseState); }
       if (data.completed && data.report) {
-        setRunning(false);
-        setReport(data.report as TrainingReportData);
-        setMessage("");
+        setRunning(false); setReport(data.report as TrainingReportData); setMessage("");
         notify("Heimtraining abgeschlossen", { message: "Dein Trainingsbericht ist bereit.", tone: "success" });
       } else if (data.exerciseCompleted) {
         setMessage("Übung abgeschlossen. Die nächste Übung startet direkt.");
@@ -298,18 +303,16 @@ export default function HomeTrainingPage() {
           <section className="training-result-grid">
             <article className="result-grid-score"><small>Aktueller Punktestand</small><strong>{state.score ?? "–"}</strong><span>Aufnahme {state.visit ?? 1}</span></article>
             <article className="result-grid-target"><small>Aktuelles Ziel</small><strong>{state.target ?? currentExercise.name}</strong><span>{state.dartsThrown ?? 0} Darts gespielt</span></article>
-            <article className="result-grid-player"><small>Wer ist dran?</small><strong>{selectedPlayer?.displayName ?? "Spieler"}</strong><span>{session.status === "PAUSED" ? "Training pausiert" : "Du bist am Zug"}</span></article>
+            <article className="result-grid-player"><small>Wer ist dran?</small><strong>{selectedPlayer?.displayName ?? "Spieler"}</strong><span>Du bist am Zug</span></article>
             <article className="result-grid-free competition-live-panel">
               <div className="competition-live-heading"><div><small>Übung</small><strong>{currentExercise.name}</strong></div><span>{activePlan.goal}</span></div>
               <div className="competition-live-metrics">{metrics.map((metric) => <div key={metric.label}><small>{metric.label}</small><strong>{metric.value}</strong></div>)}</div>
               <div className="result-grid-progress"><span style={{ width: `${progressPercent}%` }} /></div>
             </article>
-            <section className="result-grid-engine">
-              {running ? <ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} /> : <div className="result-grid-paused"><strong>Training pausiert</strong><span>Der aktuelle Stand ist sicher in der Datenbank gespeichert.</span></div>}
-            </section>
+            <section className="result-grid-engine"><ExerciseResultInput resultType={currentExercise.resultType} exerciseName={currentExercise.name} state={exerciseState} disabled={saving} onSubmit={saveVisit} /></section>
             <footer className="result-grid-undo competition-control-row">
               <button className="button secondary" disabled={saving || history.length === 0} onClick={() => void undoLastVisit()}>Letzte Aufnahme rückgängig</button>
-              {running ? <button className="button" disabled={saving} onClick={() => void sessionAction("pause")}>Training pausieren</button> : <button className="button" disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>}
+              <button className="button" disabled={saving} onClick={() => void sessionAction("pause")}>Training pausieren</button>
               {message && <p className="form-message">{message}</p>}
             </footer>
           </section>
@@ -319,12 +322,87 @@ export default function HomeTrainingPage() {
   }
 
   return (
-    <main className="dashboard-page">
-      <section className="dashboard-heading"><div><div className="eyebrow">Spielerbereich</div><h1>Heimtraining</h1><p>Dein Trainingsplan, deine Aufnahmen und dein Fortschritt werden direkt aus der Datenbank geladen.</p></div></section>
-      <section className="club-panel admin-form" style={{ marginBottom: 24 }}><label>Spieler<select value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setReport(null); void load(id); }}>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label></section>
-      <section className="section-block"><div className="section-heading"><div><span className="eyebrow">Meine Pläne</span><h2>{plans.length} verfügbar</h2></div></div><div className="saved-plan-grid">{plans.map((plan) => <article className="saved-plan-card" key={plan.id}><span className="status">{plan.goal}</span><h3>{plan.title}</h3><p>{plan.durationMin} Minuten · {readItems(plan.planJson).length} Übungen</p><button className="button full" disabled={saving} onClick={() => void startPlan(plan)}>Training starten</button></article>)}</div></section>
-      {plans.length === 0 && <section className="club-panel admin-form"><div className="section-heading"><div><span className="eyebrow">Kein Plan vorhanden</span><h2>Eigenen Plan erstellen</h2></div></div><label>Ziel<select value={goal} onChange={(event) => setGoal(event.target.value)}>{goals.map((item) => <option key={item}>{item}</option>)}</select></label><label>Dauer<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>{[30,45,60,75,90].map((item) => <option key={item} value={item}>{item} Minuten</option>)}</select></label><button className="button" onClick={createOwnPlan}>Plan erstellen lassen</button></section>}
-      {message && <p className="form-message" style={{ marginTop: 18 }}>{message}</p>}
+    <main className="home-v3-page">
+      <section className="home-v3-hero">
+        <div>
+          <span className="home-v3-kicker">Spielerbereich · Heimtraining</span>
+          <h1>Trainiere fokussiert.<br /><em>Bleib im Rhythmus.</em></h1>
+          <p>Persönliche Pläne, laufende Einheiten und dein nächster Trainingsschritt an einem Ort.</p>
+        </div>
+        <div className="home-v3-player">
+          <label htmlFor="home-player">Aktiver Spieler</label>
+          <select id="home-player" value={playerId} onChange={(event) => { const id = Number(event.target.value); setPlayerId(id); setReport(null); setFilterGoal("Alle"); void load(id); }}>
+            {players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}
+          </select>
+          <strong>{selectedPlayer?.displayName ?? "Spieler wählen"}</strong>
+        </div>
+      </section>
+
+      {session && activePlan && !running && (
+        <section className="home-v3-resume">
+          <div className="home-v3-resume-copy">
+            <span>Gespeicherte Einheit</span>
+            <h2>{activePlan.title}</h2>
+            <p>{currentExercise?.name ?? "Nächste Übung"} · {history.length} Ergebnisse gespeichert</p>
+            <div className="home-v3-progress"><span style={{ width: `${progressPercent}%` }} /></div>
+          </div>
+          <div className="home-v3-resume-value"><strong>{progressPercent}%</strong><span>Übung {exerciseIndex + 1} von {Math.max(planItems.length, 1)}</span></div>
+          <button disabled={saving} onClick={() => void sessionAction("resume")}>Training fortsetzen</button>
+        </section>
+      )}
+
+      <section className="home-v3-stats">
+        <article><span>Pläne</span><strong>{plans.length}</strong><small>für dich verfügbar</small></article>
+        <article><span>Trainingszeit</span><strong>{totalMinutes}</strong><small>Minuten geplant</small></article>
+        <article><span>Trainingsziele</span><strong>{uniqueGoals}</strong><small>Bereiche abgedeckt</small></article>
+        <article><span>Wochenziel</span><strong>2×</strong><small>empfohlener Rhythmus</small></article>
+      </section>
+
+      <section className="home-v3-toolbar">
+        <div>
+          <span>Meine Trainingspläne</span>
+          <h2>Wähle deinen Fokus</h2>
+        </div>
+        <button className="home-v3-create" onClick={() => setShowCreator((value) => !value)}>{showCreator ? "Generator schließen" : "+ Neuen Plan erstellen"}</button>
+      </section>
+
+      {showCreator && (
+        <section className="home-v3-generator">
+          <div><span>Plan-Generator</span><h2>Deine nächste Einheit</h2><p>Ziel und Dauer auswählen – die Übungen werden automatisch zusammengestellt.</p></div>
+          <label>Ziel<select value={goal} onChange={(event) => setGoal(event.target.value)}>{goals.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label>Dauer<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}>{[30,45,60,75,90].map((item) => <option key={item} value={item}>{item} Minuten</option>)}</select></label>
+          <button disabled={saving || !playerId} onClick={() => void createOwnPlan()}>{saving ? "Wird erstellt …" : "Plan erstellen"}</button>
+        </section>
+      )}
+
+      <section className="home-v3-filters">
+        <div className="home-v3-chips">{availableGoals.map((item) => <button key={item} className={filterGoal === item ? "is-active" : ""} onClick={() => setFilterGoal(item)}>{item}</button>)}</div>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Plan suchen …" aria-label="Trainingsplan suchen" />
+      </section>
+
+      {loading ? (
+        <section className="home-v3-empty"><strong>Pläne werden geladen …</strong></section>
+      ) : filteredPlans.length > 0 ? (
+        <section className="home-v3-grid">
+          {filteredPlans.map((plan) => {
+            const items = readItems(plan.planJson);
+            const isActive = session?.homeTrainingPlanId === plan.id;
+            return (
+              <article className={`home-v3-plan ${isActive ? "is-active" : ""}`} key={plan.id}>
+                <div className="home-v3-plan-head"><span>{plan.goal}</span>{isActive && <b>Aktiv</b>}</div>
+                <h3>{plan.title}</h3>
+                <p>{items.length} Übungen für eine fokussierte Einheit.</p>
+                <div className="home-v3-plan-meta"><span><strong>{plan.durationMin}</strong> Min.</span><span><strong>{items.length}</strong> Übungen</span></div>
+                <button disabled={saving || Boolean(session && !isActive)} onClick={() => void startPlan(plan)}>{isActive ? "Training fortsetzen" : "Training starten"}</button>
+              </article>
+            );
+          })}
+        </section>
+      ) : (
+        <section className="home-v3-empty"><span>Keine passenden Pläne</span><strong>Ändere den Filter oder erstelle eine neue Einheit.</strong><button onClick={() => setShowCreator(true)}>Plan erstellen</button></section>
+      )}
+
+      {message && <p className="home-v3-message">{message}</p>}
     </main>
   );
 }
