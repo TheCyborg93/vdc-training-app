@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { buildCoachProfile, type CoachArea, type CoachResultInput } from "@/lib/ai-coach";
+import {
+  buildCoachProfile,
+  CLUB_TRAINING_SESSIONS_PER_WEEK,
+  type CoachArea,
+  type CoachResultInput,
+} from "@/lib/ai-coach";
 
 export const preferredRegion = "lhr1";
 export const runtime = "nodejs";
 
 type CoachResultWithPlayer = CoachResultInput & { playerId: number };
-
 type TrainingFocus = "SCORING" | "CHECKOUT" | "DOUBLES" | "BULL" | "OTHER";
 
 const focusLabels: Record<TrainingFocus, string> = {
@@ -15,6 +19,14 @@ const focusLabels: Record<TrainingFocus, string> = {
   DOUBLES: "Doppel",
   BULL: "Bull",
   OTHER: "Weitere Bereiche",
+};
+
+const focusExercises: Record<TrainingFocus, string[]> = {
+  SCORING: ["100 Darts at 20", "Sniper - High Scoring", "Switch - 20 & 19"],
+  CHECKOUT: ["Catch 40 - Bereich 61 bis 70", "121 - The Checkout Game", "Random Checkout"],
+  DOUBLES: ["Bob's 27 - Classic", "Double Lock - D16", "Double Lock - D20"],
+  BULL: ["Bullseye Challenge", "100 Darts at Bullseye", "Finish 50 (Bull)"],
+  OTHER: ["Around the Clock - Singles (Vorwärts)", "Halve It - Track 3", "Black & White"],
 };
 
 function resultWords(result: CoachResultInput) {
@@ -43,17 +55,42 @@ function challengeFor(area: CoachArea, recentResults: CoachResultInput[], active
   }).length;
 
   const definitions: Record<CoachArea, { title: string; description: string; target: number; unit: string }> = {
-    SCORING: { title: "Scoring-Woche", description: "Absolviere gezielte Scoring-Aufnahmen und stabilisiere deinen Rhythmus.", target: 15, unit: "Aufnahmen" },
-    CHECKOUT: { title: "Checkout-Fokus", description: "Trainiere klare Finishwege und dokumentiere jeden Checkout-Versuch.", target: 12, unit: "Versuche" },
-    DOUBLES: { title: "Doppel-Mission", description: "Arbeite diese Woche regelmäßig an deinen bevorzugten Doppeln.", target: 15, unit: "Aufnahmen" },
-    BULL: { title: "Bull-Control", description: "Sammle kontrollierte Aufnahmen auf Single- und Double-Bull.", target: 12, unit: "Aufnahmen" },
-    CONSISTENCY: { title: "Konstanz-Serie", description: "Schließe drei kurze Trainingseinheiten an unterschiedlichen Tagen ab.", target: 3, unit: "Trainingstage" },
-    TRAINING: { title: "Trainingsroutine", description: "Trainiere an drei Tagen dieser Woche mindestens eine vollständige Übung.", target: 3, unit: "Trainingstage" },
+    SCORING: { title: "Scoring-Woche", description: "Sammle über die zwei Trainingstage gezielte Scoring-Aufnahmen.", target: 12, unit: "Aufnahmen" },
+    CHECKOUT: { title: "Checkout-Fokus", description: "Dokumentiere an beiden Trainingstagen klare Checkout-Versuche.", target: 10, unit: "Versuche" },
+    DOUBLES: { title: "Doppel-Mission", description: "Arbeite in beiden Wochenblöcken an deinen bevorzugten Doppeln.", target: 12, unit: "Aufnahmen" },
+    BULL: { title: "Bull-Control", description: "Sammle kontrollierte Aufnahmen auf Single- und Double-Bull.", target: 10, unit: "Aufnahmen" },
+    CONSISTENCY: { title: "Konstanz-Serie", description: "Nimm an beiden regulären Trainingstagen teil und schließe mindestens eine Übung ab.", target: CLUB_TRAINING_SESSIONS_PER_WEEK, unit: "Trainingstage" },
+    TRAINING: { title: "Trainingsroutine", description: "Erreiche den Vereinsrhythmus von zwei Trainingstagen in dieser Woche.", target: CLUB_TRAINING_SESSIONS_PER_WEEK, unit: "Trainingstage" },
   };
 
   const definition = definitions[area];
   const progress = area === "CONSISTENCY" || area === "TRAINING" ? activeDaysLast7 : matching;
   return { area, ...definition, progress: Math.min(progress, definition.target), completed: progress >= definition.target };
+}
+
+function weeklyPlan(balance: { key: TrainingFocus; label: string; percentage: number }[]) {
+  const focusOrder = balance
+    .filter((item) => item.key !== "OTHER")
+    .sort((a, b) => a.percentage - b.percentage)
+    .map((item) => item.key);
+  const first = focusOrder[0] ?? "CHECKOUT";
+  const second = focusOrder.find((item) => item !== first) ?? "DOUBLES";
+  return [
+    {
+      session: 1,
+      title: `Training A · ${focusLabels[first]}`,
+      focus: focusLabels[first],
+      purpose: "Größten untertrainierten Bereich gezielt bearbeiten.",
+      exercises: focusExercises[first],
+    },
+    {
+      session: 2,
+      title: `Training B · ${focusLabels[second]} & Matchtransfer`,
+      focus: focusLabels[second],
+      purpose: "Zweiten Schwerpunkt festigen und unter Druck in eine wettkampfnähere Übung übertragen.",
+      exercises: [...focusExercises[second].slice(0, 2), "501 - Single In / Double Out"],
+    },
+  ];
 }
 
 export async function GET() {
@@ -154,6 +191,7 @@ export async function GET() {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      schedule: { sessionsPerWeek: CLUB_TRAINING_SESSIONS_PER_WEEK },
       overview: { players: profiles.length, improving, declining, analyzedResults: combined.length, focus },
       trainingIntelligence: {
         periodDays: 30,
@@ -161,8 +199,9 @@ export async function GET() {
         undertrained,
         overtrained,
         recommendation: undertrained.length
-          ? `Das nächste Vereinstraining sollte ${undertrained.map((item) => item.label).join(" und ")} stärker berücksichtigen.`
-          : "Die Trainingsschwerpunkte sind aktuell ausgewogen verteilt.",
+          ? `Bei zwei Trainingstagen pro Woche sollte Training A ${undertrained[0]?.label} und Training B ${undertrained[1]?.label ?? "Matchtransfer"} priorisieren.`
+          : "Die beiden wöchentlichen Trainingstermine sind aktuell ausgewogen verteilt.",
+        weeklyPlan: weeklyPlan(trainingBalance),
       },
       profiles,
     }, {
