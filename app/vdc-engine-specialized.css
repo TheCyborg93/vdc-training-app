@@ -1,0 +1,50 @@
+.engine-score-guidance {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 10px 13px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+  color: var(--text-muted,#9ca8b8);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.engine-score-guidance.is-preview {
+  border-color: rgba(0,213,255,.28);
+  background: rgba(0,213,255,.08);
+  color: #bff5ff;
+}
+.engine-score-guidance.is-valid {
+  border-color: rgba(0,200,83,.3);
+  background: rgba(0,200,83,.08);
+  color: #b7ffd0;
+}
+.engine-score-guidance.is-warning {
+  border-color: rgba(255,179,0,.38);
+  background: rgba(255,179,0,.1);
+  color: #ffe0a1;
+}
+.engine-score-guidance.is-error {
+  border-color: rgba(255,82,82,.5);
+  background: rgba(255,82,82,.11);
+  color: #ffc3c3;
+}
+.engine-score-entry.is-invalid input {
+  border-color: rgba(255,82,82,.72);
+  box-shadow: 0 0 0 4px rgba(255,82,82,.11);
+}
+.competition-engine-score .engine-score-guidance.is-preview::before,
+.competition-engine-score .engine-score-guidance.is-warning::before,
+.competition-engine-score .engine-score-guidance.is-error::before,
+.competition-engine-score .engine-score-guidance.is-valid::before {
+  margin-right: 8px;
+  font-size: .9rem;
+}
+.competition-engine-score .engine-score-guidance.is-preview::before { content: "→"; }
+.competition-engine-score .engine-score-guidance.is-valid::before { content: "✓"; }
+.competition-engine-score .engine-score-guidance.is-warning::before { content: "!"; }
+.competition-engine-score .engine-score-guidance.is-error::before { content: "×"; }
+@media (max-width:700px) {
+  .engine-score-guidance { font-size: .74rem; }
+}
