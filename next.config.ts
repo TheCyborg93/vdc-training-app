@@ -4,9 +4,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  experimental: {
-    optimizePackageImports: ["lucide-react"],
-  },
   headers: async () => [
     {
       source: "/_next/static/:path*",
