@@ -1,0 +1,451 @@
+/* Phase 1.4 – Verwaltungs- und Analysebereiche */
+
+/* Gemeinsame Seitenstruktur */
+.dashboard-page,
+.coach-page,
+.statistics-page,
+.player-admin-page,
+.exercise-admin-page,
+.board-admin-page,
+.training-plan-page {
+  display: grid;
+  gap: 24px;
+}
+
+.dashboard-heading,
+.page-heading,
+.coach-header,
+.statistics-header {
+  min-height: 128px;
+  padding: clamp(22px, 3vw, 32px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-xl);
+  background:
+    radial-gradient(circle at 88% 10%, rgba(220,31,50,.16), transparent 20rem),
+    linear-gradient(145deg, rgba(19,26,36,.97), rgba(8,12,17,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+
+.dashboard-heading::after,
+.page-heading::after,
+.coach-header::after,
+.statistics-header::after {
+  content: "";
+  position: absolute;
+  right: -60px;
+  top: -110px;
+  width: 270px;
+  height: 270px;
+  border: 32px solid rgba(220,31,50,.05);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.dashboard-heading > *,
+.page-heading > *,
+.coach-header > *,
+.statistics-header > * { position: relative; z-index: 1; }
+
+.dashboard-heading h1,
+.page-heading h1,
+.coach-header h1,
+.statistics-header h1 {
+  margin: 7px 0 8px;
+  font-family: var(--vdc-font-display);
+  font-size: clamp(2rem, 4.5vw, 4rem);
+  line-height: .94;
+  letter-spacing: -.035em;
+}
+
+.dashboard-heading p,
+.page-heading p,
+.coach-header p,
+.statistics-header p { max-width: 760px; margin: 0; color: var(--vdc-muted); }
+
+.eyebrow,
+.vdc-kicker,
+.section-heading span,
+.section-heading small {
+  color: var(--vdc-primary-hover) !important;
+  font-size: .64rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .16em !important;
+  text-transform: uppercase !important;
+}
+
+/* Formulare und Editoren */
+.player-admin-layout,
+.exercise-admin-layout,
+.training-plan-layout,
+.plan-builder-layout,
+.admin-split-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, .72fr) minmax(0, 1.28fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.admin-form,
+.editor-sidebar,
+.filter-panel {
+  position: sticky;
+  top: 94px;
+  padding: 22px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: linear-gradient(145deg, rgba(18,24,33,.97), rgba(8,12,17,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+
+.admin-form h2,
+.editor-sidebar h2,
+.filter-panel h2,
+.section-heading h2 {
+  font-family: var(--vdc-font-display);
+  letter-spacing: -.015em;
+}
+
+.admin-form label,
+.filter-panel label { display: grid; gap: 8px; font-size: .78rem; font-weight: 750; }
+
+.form-grid-2,
+.filter-grid,
+.statistics-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.category-fieldset {
+  padding: 16px;
+  border: 1px solid var(--vdc-line) !important;
+  border-radius: var(--vdc-radius-md);
+  background: rgba(255,255,255,.018);
+}
+
+.check-chip,
+.filter-chip {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--vdc-line) !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.03) !important;
+  color: var(--vdc-text-soft);
+  transition: border-color var(--vdc-speed-fast), background var(--vdc-speed-fast), color var(--vdc-speed-fast);
+}
+
+.check-chip:has(input:checked),
+.filter-chip.is-active {
+  color: white;
+  border-color: rgba(220,31,50,.45) !important;
+  background: rgba(220,31,50,.12) !important;
+}
+
+/* Kartenlisten */
+.player-list,
+.exercise-list,
+.board-list,
+.saved-plan-grid,
+.coach-player-grid,
+.statistics-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.player-admin-card,
+.exercise-admin-card,
+.board-admin-card,
+.saved-plan-card,
+.coach-player-card,
+.statistics-card {
+  position: relative;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid var(--vdc-line) !important;
+  border-radius: var(--vdc-radius-lg) !important;
+  background: linear-gradient(145deg, rgba(18,24,33,.96), rgba(9,13,19,.98)) !important;
+  box-shadow: var(--vdc-shadow-sm);
+}
+
+.player-admin-card::before,
+.exercise-admin-card::before,
+.board-admin-card::before,
+.saved-plan-card::before,
+.coach-player-card::before,
+.statistics-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: rgba(220,31,50,.72);
+}
+
+.player-avatar,
+.exercise-icon,
+.board-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid rgba(220,31,50,.25);
+  background: linear-gradient(145deg, rgba(220,31,50,.18), rgba(255,255,255,.035));
+  color: white;
+  font-family: var(--vdc-font-display);
+  font-weight: 850;
+}
+
+.player-title-row h3,
+.exercise-admin-card h3,
+.board-admin-card h3,
+.saved-plan-card h3 { margin: 0; font-family: var(--vdc-font-display); }
+
+.player-main p,
+.exercise-admin-card p,
+.board-admin-card p,
+.saved-plan-card p { margin: 5px 0 0; color: var(--vdc-muted); }
+
+.player-actions,
+.card-actions,
+.board-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.player-actions button,
+.card-actions button,
+.board-actions button,
+.card-actions a {
+  min-height: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-sm);
+  background: rgba(255,255,255,.035);
+  color: var(--vdc-text-soft);
+  cursor: pointer;
+}
+
+.player-actions button:hover,
+.card-actions button:hover,
+.board-actions button:hover,
+.card-actions a:hover { color: white; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.065); }
+
+/* Trainingsplan-Builder */
+.plan-builder,
+.training-plan-editor {
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-xl);
+  background: linear-gradient(145deg, rgba(17,23,32,.97), rgba(8,12,17,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+
+.plan-timeline,
+.exercise-timeline { display: grid; gap: 10px; }
+
+.plan-exercise,
+.timeline-item,
+.draggable-exercise {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-md);
+  background: rgba(255,255,255,.025);
+}
+
+.drag-handle { color: var(--vdc-muted); cursor: grab; }
+.drag-handle:active { cursor: grabbing; }
+
+/* Katalog und Filter */
+.exercise-toolbar,
+.catalog-toolbar,
+.statistics-toolbar,
+.coach-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: rgba(14,20,28,.88);
+}
+
+.exercise-toolbar input,
+.catalog-toolbar input { flex: 1 1 260px; }
+
+.exercise-meta,
+.category-tags,
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.exercise-meta span,
+.category-tags span,
+.card-meta span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--vdc-line);
+  background: rgba(255,255,255,.03);
+  color: var(--vdc-muted);
+  font-size: .68rem;
+}
+
+.category-tags span { color: #ff8f9a; border-color: rgba(220,31,50,.22); background: rgba(220,31,50,.08); }
+
+/* Statistik und Coach */
+.statistics-kpis,
+.coach-kpis,
+.performance-grid,
+.profile-skill-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+}
+
+.statistics-kpis article,
+.coach-kpis article,
+.performance-grid article,
+.profile-skill-grid article {
+  min-height: 122px;
+  padding: 18px;
+  display: grid;
+  align-content: space-between;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: linear-gradient(145deg, rgba(18,24,33,.97), rgba(8,12,17,.98));
+}
+
+.statistics-kpis small,
+.coach-kpis small,
+.performance-grid small,
+.profile-skill-grid small { color: var(--vdc-muted); text-transform: uppercase; letter-spacing: .1em; font-size: .62rem; }
+
+.statistics-kpis strong,
+.coach-kpis strong,
+.performance-grid strong,
+.profile-skill-grid strong {
+  font-family: var(--vdc-font-mono);
+  font-size: clamp(1.8rem, 3vw, 2.55rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.coach-layout,
+.statistics-layout,
+.analysis-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.coach-panel,
+.statistics-panel,
+.analysis-panel {
+  padding: 20px;
+  border: 1px solid var(--vdc-line);
+  border-radius: var(--vdc-radius-lg);
+  background: linear-gradient(145deg, rgba(18,24,33,.96), rgba(8,12,17,.98));
+  box-shadow: var(--vdc-shadow-sm);
+}
+
+.trend-up { color: var(--vdc-success) !important; }
+.trend-down { color: var(--vdc-danger) !important; }
+.trend-stable { color: var(--vdc-muted) !important; }
+
+/* Boards */
+.board-grid,
+.boards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+}
+
+.board-admin-card,
+.board-card { min-height: 160px; display: grid; align-content: space-between; }
+
+.board-status-free { color: var(--vdc-success); }
+.board-status-occupied { color: var(--vdc-warning); }
+.board-status-offline { color: var(--vdc-danger); }
+
+/* Responsive */
+@media (max-width: 1120px) {
+  .statistics-kpis,
+  .coach-kpis,
+  .performance-grid,
+  .profile-skill-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .board-grid,
+  .boards-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 900px) {
+  .player-admin-layout,
+  .exercise-admin-layout,
+  .training-plan-layout,
+  .plan-builder-layout,
+  .admin-split-layout,
+  .coach-layout,
+  .statistics-layout,
+  .analysis-layout { grid-template-columns: 1fr; }
+
+  .admin-form,
+  .editor-sidebar,
+  .filter-panel { position: static; }
+}
+
+@media (max-width: 640px) {
+  .dashboard-heading,
+  .page-heading,
+  .coach-header,
+  .statistics-header { min-height: auto; padding: 21px 18px; align-items: flex-start; flex-direction: column; }
+
+  .dashboard-heading h1,
+  .page-heading h1,
+  .coach-header h1,
+  .statistics-header h1 { font-size: 2.3rem; }
+
+  .form-grid-2,
+  .filter-grid,
+  .statistics-filter-grid,
+  .statistics-kpis,
+  .coach-kpis,
+  .performance-grid,
+  .profile-skill-grid,
+  .board-grid,
+  .boards-grid { grid-template-columns: 1fr; }
+
+  .player-admin-card,
+  .exercise-admin-card,
+  .board-admin-card { grid-template-columns: 1fr !important; align-items: start; }
+
+  .player-actions,
+  .card-actions,
+  .board-actions { justify-content: stretch; }
+  .player-actions > *,
+  .card-actions > *,
+  .board-actions > * { flex: 1 1 auto; }
+
+  .plan-exercise,
+  .timeline-item,
+  .draggable-exercise { grid-template-columns: auto minmax(0,1fr); }
+}
