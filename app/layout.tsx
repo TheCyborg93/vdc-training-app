@@ -18,6 +18,7 @@ import "./vdc-sprint4.css";
 import "./vdc-production.css";
 import "./vdc-design-system.css";
 import "./vdc-components.css";
+import "./vdc-core-pages.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
