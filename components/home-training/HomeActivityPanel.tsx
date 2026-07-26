@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type ActivityDay = { date: string; active: boolean };
@@ -89,7 +90,7 @@ export default function HomeActivityPanel() {
       ) : data ? (
         <div className="home-activity-grid">
           <article className="home-activity-target">
-            <div className="home-activity-ring" style={{ "--home-progress": `${Math.min(100, (data.currentWeekDays / Math.max(data.weeklyTarget, 1)) * 100)}%` } as React.CSSProperties}>
+            <div className="home-activity-ring" style={{ "--home-progress": `${Math.min(100, (data.currentWeekDays / Math.max(data.weeklyTarget, 1)) * 100)}%` } as CSSProperties}>
               <strong>{data.currentWeekDays}/{data.weeklyTarget}</strong>
               <span>Einheiten</span>
             </div>
