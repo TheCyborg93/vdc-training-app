@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAppFeedback } from "@/components/ui/app-feedback";
 import styles from "./training-plans.module.css";
 
@@ -24,10 +25,13 @@ const goals = [
 const durations = [30, 45, 60, 75, 90, 105, 120];
 
 export default function TrainingPlansPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { confirm, notify } = useAppFeedback();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [plans, setPlans] = useState<SavedPlan[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [autoOpenedId, setAutoOpenedId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("Scoring");
   const [duration, setDuration] = useState(90);
@@ -57,10 +61,21 @@ export default function TrainingPlansPage() {
 
   useEffect(() => { void loadData(); }, []);
 
+  useEffect(() => {
+    const requestedId = Number(searchParams.get("edit"));
+    if (!Number.isInteger(requestedId) || requestedId <= 0 || autoOpenedId === requestedId || plans.length === 0) return;
+    const requestedPlan = plans.find((plan) => plan.id === requestedId && plan.status === "DRAFT");
+    if (!requestedPlan) return;
+    editPlan(requestedPlan, searchParams.get("source") === "ai");
+    setAutoOpenedId(requestedId);
+    router.replace("/trainer/trainingsplaene", { scroll: false });
+  }, [autoOpenedId, plans, router, searchParams]);
+
   const total = useMemo(() => items.reduce((sum, item) => sum + item.durationMin, 0), [items]);
   const draftPlans = plans.filter((plan) => plan.status === "DRAFT");
   const publishedPlans = plans.filter((plan) => plan.status === "PUBLISHED");
   const durationDifference = duration - total;
+  const isAiDraft = title.startsWith("AI Coach ·");
 
   function resetForm() {
     setEditingId(null);
@@ -71,7 +86,7 @@ export default function TrainingPlansPage() {
     setMessage("");
   }
 
-  function editPlan(plan: SavedPlan) {
+  function editPlan(plan: SavedPlan, fromAiCoach = false) {
     if (plan.status !== "DRAFT") return;
     setEditingId(plan.id);
     setTitle(plan.title);
@@ -79,7 +94,10 @@ export default function TrainingPlansPage() {
     setDuration(plan.durationMin);
     setItems(plan.exercises.map((item) => ({ exerciseId: item.exercise.id, durationMin: item.durationMin })));
     setMessage("");
-    notify("Entwurf geöffnet", { message: `„${plan.title}“ kann jetzt bearbeitet werden.`, tone: "info" });
+    notify(fromAiCoach ? "AI-Coach-Entwurf geöffnet" : "Entwurf geöffnet", {
+      message: fromAiCoach ? "Prüfe Reihenfolge und Dauer und passe den Vorschlag an euren Trainingstag an." : `„${plan.title}“ kann jetzt bearbeitet werden.`,
+      tone: "info",
+    });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -201,9 +219,11 @@ export default function TrainingPlansPage() {
       <section className="vdc-plan-workspace">
         <form className="vdc-plan-builder" onSubmit={save}>
           <header className="vdc-builder-header">
-            <div><span className="vdc-kicker">{editingId ? "Entwurf bearbeiten" : "Neuer Trainingsplan"}</span><h2>{editingId ? "Plan aktualisieren" : "Plan zusammenstellen"}</h2></div>
+            <div><span className="vdc-kicker">{isAiDraft ? "AI-Coach-Entwurf" : editingId ? "Entwurf bearbeiten" : "Neuer Trainingsplan"}</span><h2>{editingId ? "Plan aktualisieren" : "Plan zusammenstellen"}</h2></div>
             {editingId && <button type="button" className="button secondary" onClick={resetForm}>Bearbeitung abbrechen</button>}
           </header>
+
+          {isAiDraft && <div className="vdc-ai-plan-notice"><strong>Vom AI Coach vorgeschlagen</strong><span>Reihenfolge, Übungen und Zeitaufteilung bleiben vollständig bearbeitbar.</span></div>}
 
           <section className="vdc-builder-step">
             <div className="vdc-step-number">01</div>
@@ -279,7 +299,7 @@ export default function TrainingPlansPage() {
       <section className="vdc-plan-library">
         <header className="vdc-section-heading"><div><span className="vdc-kicker">Gespeichert</span><h2>Trainingsplan-Bibliothek</h2></div><span>{draftPlans.length} Entwürfe · {publishedPlans.length} veröffentlicht</span></header>
         <div className="vdc-plan-group"><header><h3>Entwürfe</h3><span>{draftPlans.length}</span></header><div className="vdc-plan-card-grid">
-          {draftPlans.length === 0 ? <div className="vdc-empty-state"><strong>Keine Entwürfe</strong><p>Neue Pläne erscheinen nach dem Speichern hier.</p></div> : draftPlans.map((plan) => <article className="vdc-plan-card" key={plan.id}><header><span className="vdc-status-badge is-draft"><i />Entwurf</span><small>{plan.exercises.length} Übungen</small></header><h3>{plan.title}</h3><p>{plan.goal} · {plan.durationMin} Minuten</p><ol>{plan.exercises.slice(0, 4).map((item) => <li key={item.id}><span>{item.exercise.name}</span><b>{item.durationMin} Min.</b></li>)}</ol><div className="vdc-plan-card-actions"><button className="button secondary" onClick={() => editPlan(plan)}>Bearbeiten</button><button className="button danger-outline" disabled={saving} onClick={() => void deletePlan(plan)}>Löschen</button></div></article>)}
+          {draftPlans.length === 0 ? <div className="vdc-empty-state"><strong>Keine Entwürfe</strong><p>Neue Pläne erscheinen nach dem Speichern hier.</p></div> : draftPlans.map((plan) => <article className="vdc-plan-card" key={plan.id}><header><span className="vdc-status-badge is-draft"><i />Entwurf</span><small>{plan.title.startsWith("AI Coach ·") ? "AI Coach · " : ""}{plan.exercises.length} Übungen</small></header><h3>{plan.title}</h3><p>{plan.goal} · {plan.durationMin} Minuten</p><ol>{plan.exercises.slice(0, 4).map((item) => <li key={item.id}><span>{item.exercise.name}</span><b>{item.durationMin} Min.</b></li>)}</ol><div className="vdc-plan-card-actions"><button className="button secondary" onClick={() => editPlan(plan)}>Bearbeiten</button><button className="button danger-outline" disabled={saving} onClick={() => void deletePlan(plan)}>Löschen</button></div></article>)}
         </div></div>
         <div className="vdc-plan-group"><header><h3>Veröffentlicht</h3><span>{publishedPlans.length}</span></header><div className="vdc-plan-card-grid">
           {publishedPlans.length === 0 ? <div className="vdc-empty-state"><strong>Keine veröffentlichten Pläne</strong><p>Veröffentlichte Pläne werden schreibgeschützt angezeigt.</p></div> : publishedPlans.map((plan) => <article className="vdc-plan-card is-published" key={plan.id}><header><span className="vdc-status-badge is-published"><i />Veröffentlicht</span><small>{plan.exercises.length} Übungen</small></header><h3>{plan.title}</h3><p>{plan.goal} · {plan.durationMin} Minuten</p><ol>{plan.exercises.slice(0, 4).map((item) => <li key={item.id}><span>{item.exercise.name}</span><b>{item.durationMin} Min.</b></li>)}</ol><div className="vdc-plan-card-actions"><Link className="button secondary" href="/trainer/trainingstag">Für Trainingstag verwenden</Link></div></article>)}
