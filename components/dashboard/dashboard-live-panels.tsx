@@ -28,11 +28,26 @@ type LivePayload = {
   updatedAt: string;
 };
 
+type InsightAlert = {
+  level: "success" | "warning" | "critical";
+  title: string;
+  text: string;
+  href: string;
+};
+
 type InsightPayload = {
   topPlayers: { playerId: number; name: string; results: number; activeDays: number; average: number | null }[];
   topExercises: { exerciseId: number; name: string; results: number; players: number }[];
   heatmap: { date: string; count: number }[];
-  homeTraining: { openSessions: number; plans: number };
+  homeTraining: { openSessions: number; plans: number; staleSessions: number };
+  cadence: {
+    completedLast14Days: number;
+    expectedLast14Days: number;
+    percentage: number;
+    targetPerWeek: number;
+  };
+  inactivePlayers: { playerId: number; name: string }[];
+  alerts: InsightAlert[];
 };
 
 type BoardWallProps = {
@@ -47,6 +62,22 @@ type ActivityProps = {
 };
 
 const liveEventName = "vdc-dashboard-live";
+let insightRequest: Promise<InsightPayload> | null = null;
+
+function loadDashboardInsights() {
+  if (!insightRequest) {
+    insightRequest = fetch("/api/trainer/dashboard-insights", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Dashboard-Auswertung konnte nicht geladen werden.");
+        return response.json() as Promise<InsightPayload>;
+      })
+      .catch((error) => {
+        insightRequest = null;
+        throw error;
+      });
+  }
+  return insightRequest;
+}
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
@@ -138,6 +169,80 @@ export function DashboardBoardWall({
   );
 }
 
+export function DashboardCoachBriefing() {
+  const [insights, setInsights] = useState<InsightPayload | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    loadDashboardInsights()
+      .then((payload) => {
+        if (active) setInsights(payload);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return (
+    <article className="vdc-v3-coach-card vdc-v3-coach-briefing">
+      <header>
+        <div><span className="vdc-kicker">Coach Briefing</span><h2>Trainerhinweise</h2></div>
+        <span>AI</span>
+      </header>
+
+      {!insights && !failed && (
+        <div className="vdc-v3-coach-loading" aria-label="Coach-Briefing wird geladen">
+          <span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" />
+        </div>
+      )}
+
+      {failed && (
+        <div className="vdc-empty-line">Die aktuellen Trainerhinweise konnten nicht geladen werden.</div>
+      )}
+
+      {insights && (
+        <>
+          <section className="vdc-v3-cadence">
+            <div>
+              <small>Trainingsrhythmus</small>
+              <strong>{insights.cadence.completedLast14Days}/{insights.cadence.expectedLast14Days}</strong>
+              <span>Einheiten in 14 Tagen · Ziel {insights.cadence.targetPerWeek}× pro Woche</span>
+            </div>
+            <div className="vdc-v3-cadence-track" aria-label={`${insights.cadence.percentage} Prozent des Trainingsziels erreicht`}>
+              <i style={{ width: `${insights.cadence.percentage}%` }} />
+            </div>
+          </section>
+
+          <div className="vdc-v3-alert-list">
+            {insights.alerts.map((alert) => (
+              <Link href={alert.href} className={`is-${alert.level}`} key={`${alert.level}-${alert.title}`}>
+                <i aria-hidden="true" />
+                <span><strong>{alert.title}</strong><small>{alert.text}</small></span>
+                <b>→</b>
+              </Link>
+            ))}
+          </div>
+
+          {insights.inactivePlayers.length > 0 && (
+            <div className="vdc-v3-inactive-players">
+              <small>Ohne Ergebnis in den letzten 28 Tagen</small>
+              <div>
+                {insights.inactivePlayers.map((player) => (
+                  <Link href={`/trainer/spieler/${player.playerId}`} key={player.playerId}>{player.name}</Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </article>
+  );
+}
+
 export function DashboardActivity({ initialResults }: ActivityProps) {
   const [results, setResults] = useState(initialResults);
   const [insights, setInsights] = useState<InsightPayload | null>(null);
@@ -152,21 +257,15 @@ export function DashboardActivity({ initialResults }: ActivityProps) {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    async function loadInsights() {
-      try {
-        const response = await fetch("/api/trainer/dashboard-insights", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        setInsights((await response.json()) as InsightPayload);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-      }
-    }
-    void loadInsights();
-    return () => controller.abort();
+    let active = true;
+    loadDashboardInsights()
+      .then((payload) => {
+        if (active) setInsights(payload);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
   const maxHeat = useMemo(
