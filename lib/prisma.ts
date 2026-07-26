@@ -1,9 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 
-const prismaGlobal = globalThis as unknown as { prisma: PrismaClient | undefined };
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma = prismaGlobal.prisma ?? new PrismaClient();
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+});
 
-if (process.env.NODE_ENV !== "production") {
-  prismaGlobal.prisma = prisma;
-}
+// Vercel kann dieselbe Node.js-Instanz für mehrere Requests wiederverwenden.
+// Der Client bleibt deshalb auch in Production global erhalten. Das verhindert
+// zusätzliche Pool-Verbindungen und reduziert die Latenz nach dem ersten Request.
+globalForPrisma.prisma = prisma;
