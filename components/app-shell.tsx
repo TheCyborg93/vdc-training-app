@@ -23,8 +23,9 @@ const trainerGroups: NavGroup[] = [
     { href: "/trainer/boards", label: "Boards", icon: "boards" },
   ] },
   { label: "Analyse", items: [
+    { href: "/trainer/statistiken", label: "Statistiken V2", icon: "stats" },
     { href: "/trainer/ai-coach", label: "AI Coach", icon: "coach" },
-    { href: "/trainer/archiv", label: "Archiv & Statistiken", icon: "archive" },
+    { href: "/trainer/archiv", label: "Trainingsarchiv", icon: "archive" },
   ] },
   { label: "System", items: [{ href: "/trainer/system", label: "Systeminformationen", icon: "system" }] },
 ];
@@ -51,8 +52,9 @@ const pageNames: Record<string, string> = {
   "/trainer/live": "Live Center",
   "/trainer/spieler": "Spieler",
   "/trainer/boards": "Boards",
+  "/trainer/statistiken": "Statistiken V2",
   "/trainer/ai-coach": "AI Coach",
-  "/trainer/archiv": "Archiv & Statistiken",
+  "/trainer/archiv": "Trainingsarchiv",
   "/trainer/system": "Systeminformationen",
 };
 
