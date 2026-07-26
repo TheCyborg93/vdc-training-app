@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type IconName = "dashboard" | "calendar" | "plans" | "home" | "exercises" | "players" | "boards" | "live" | "archive" | "stats" | "system" | "login" | "switch";
+type IconName = "dashboard" | "calendar" | "plans" | "home" | "exercises" | "players" | "boards" | "live" | "archive" | "stats" | "coach" | "system" | "login" | "switch";
 type NavItem = { href: string; label: string; icon: IconName };
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -22,7 +22,10 @@ const trainerGroups: NavGroup[] = [
     { href: "/trainer/spieler", label: "Spieler", icon: "players" },
     { href: "/trainer/boards", label: "Boards", icon: "boards" },
   ] },
-  { label: "Analyse", items: [{ href: "/trainer/archiv", label: "Archiv & Statistiken", icon: "archive" }] },
+  { label: "Analyse", items: [
+    { href: "/trainer/ai-coach", label: "AI Coach", icon: "coach" },
+    { href: "/trainer/archiv", label: "Archiv & Statistiken", icon: "archive" },
+  ] },
   { label: "System", items: [{ href: "/trainer/system", label: "Systeminformationen", icon: "system" }] },
 ];
 
@@ -48,6 +51,7 @@ const pageNames: Record<string, string> = {
   "/trainer/live": "Live Center",
   "/trainer/spieler": "Spieler",
   "/trainer/boards": "Boards",
+  "/trainer/ai-coach": "AI Coach",
   "/trainer/archiv": "Archiv & Statistiken",
   "/trainer/system": "Systeminformationen",
 };
@@ -68,6 +72,7 @@ function Icon({ name }: { name: IconName }) {
     live: <><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a9 9 0 0 0 0 13M18.5 5.5a9 9 0 0 1 0 13"/></>,
     archive: <><path d="M4 7h16v13H4zM3 3h18v4H3z"/><path d="M9 11h6"/></>,
     stats: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></>,
+    coach: <><path d="M4 19V9l8-5 8 5v10"/><path d="M8 19v-5h8v5M9 9h6M12 7v4"/><circle cx="12" cy="14" r="1"/></>,
     system: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 3.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2v-4h.09A1.7 1.7 0 0 0 3.6 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8 3.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2h4v.09A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 8c.15.38.36.72.6 1 .3.35.7.55 1.1.6h.09v4h-.09c-.4.05-.8.25-1.1.6-.24.28-.45.62-.6 1Z"/></>,
     login: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M14 3h7v18h-7"/></>,
     switch: <><path d="M7 7h11l-3-3M17 17H6l3 3"/></>,
