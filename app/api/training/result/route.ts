@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { applyVisit, createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
+import { normalizeEngineVisit } from "@/lib/exercise-engine-v2";
 import { buildTrainingReport } from "@/lib/training-report";
 
 function shuffle<T>(items: T[]): T[] {
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
     }
 
     if (session.status !== "RUNNING") return NextResponse.json({ error: "Diese Board-Sitzung läuft aktuell nicht." }, { status: 409 });
-    if (!body.value || typeof body.value !== "object") return NextResponse.json({ error: "Eine Aufnahme ist erforderlich." }, { status: 400 });
+    if (!body.value || typeof body.value !== "object" || Array.isArray(body.value)) return NextResponse.json({ error: "Eine gültige Aufnahme ist erforderlich." }, { status: 400 });
 
     const assignments = await prisma.boardAssignment.findMany({
       where: { trainingDayId: session.trainingDayId, boardId: session.boardId },
@@ -116,7 +117,8 @@ export async function POST(request: Request) {
     const currentState = progress.playerStates[String(currentPlayerId)] ?? createInitialExerciseState(currentPlanExercise.exercise);
     if (currentState.completed) return NextResponse.json({ error: "Dieser Spieler hat die Übung bereits abgeschlossen." }, { status: 409 });
 
-    const applied = applyVisit(currentPlanExercise.exercise, currentState, body.value as Record<string, unknown>);
+    const normalizedValue = normalizeEngineVisit(currentState.kind, currentState.engineConfig ?? currentPlanExercise.exercise.resultConfigJson, body.value);
+    const applied = applyVisit(currentPlanExercise.exercise, currentState, normalizedValue);
     const updatedStates = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
     const allPlayersFinished = progress.order.every((playerId) => Boolean(updatedStates[String(playerId)]?.completed));
 
@@ -151,7 +153,7 @@ export async function POST(request: Request) {
     };
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
     const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
-    const storedValue = { ...applied.visitValue, progressBefore: progress } as Prisma.InputJsonValue;
+    const storedValue = { ...applied.visitValue, normalizedInput: normalizedValue, progressBefore: progress } as Prisma.InputJsonValue;
     const completedAt = completed ? new Date() : null;
     const nextProgressJson = nextProgress as Prisma.InputJsonValue;
 
