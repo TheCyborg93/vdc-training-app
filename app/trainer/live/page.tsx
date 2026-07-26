@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAppFeedback } from "@/components/ui/app-feedback";
 import styles from "./trainer-live.module.css";
 
 type Player = { id: number; displayName: string };
@@ -25,20 +26,30 @@ type LiveTraining = {
   trainingPlan: { title: string; goal: string; durationMin: number };
   boards: LiveBoard[];
 };
+type ControlAction = "pause" | "resume" | "skip" | "finish_exercise" | "finish_board" | "reorder";
 
 function statusLabel(status: string) {
   if (status === "RUNNING") return "Läuft";
-  if (status === "COMPLETED") return "Beendet";
+  if (status === "COMPLETED") return "Abgeschlossen";
   if (status === "PAUSED") return "Pausiert";
-  return "Wartet";
+  return "Noch nicht gestartet";
+}
+
+function statusDescription(status: string) {
+  if (status === "RUNNING") return "Ergebnisse können am Board eingetragen werden.";
+  if (status === "PAUSED") return "Der aktuelle Stand ist gespeichert.";
+  if (status === "COMPLETED") return "Dieses Board-Training ist beendet.";
+  return "Das Board wartet auf den Trainingsstart.";
 }
 
 export default function TrainerLivePage() {
+  const { confirm, notify } = useAppFeedback();
   const [training, setTraining] = useState<LiveTraining | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [busyBoardId, setBusyBoardId] = useState<number | null>(null);
   const [orders, setOrders] = useState<Record<number, number[]>>({});
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   async function loadLiveData(silent = false) {
     try {
@@ -46,18 +57,24 @@ export default function TrainerLivePage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Live-Daten konnten nicht geladen werden.");
       setTraining(data);
+      setLastUpdated(new Date());
       if (data?.boards) {
         setOrders((current) => {
           const next = { ...current };
           for (const board of data.boards as LiveBoard[]) {
-            if (!next[board.id] || next[board.id].length !== board.players.length) next[board.id] = board.players.map((player) => player.id);
+            const currentOrder = next[board.id] ?? [];
+            const playerIds = board.players.map((player) => player.id);
+            const samePlayers = currentOrder.length === playerIds.length && currentOrder.every((id) => playerIds.includes(id));
+            if (!samePlayers) next[board.id] = playerIds;
           }
           return next;
         });
       }
       if (!silent) setMessage("");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Live-Daten konnten nicht geladen werden.");
+      const text = error instanceof Error ? error.message : "Live-Daten konnten nicht geladen werden.";
+      setMessage(text);
+      if (!silent) notify("Live Center nicht erreichbar", { message: text, tone: "error" });
     } finally {
       setLoading(false);
     }
@@ -65,9 +82,11 @@ export default function TrainerLivePage() {
 
   useEffect(() => {
     void loadLiveData();
-    const timer = window.setInterval(() => void loadLiveData(true), 5000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && busyBoardId === null) void loadLiveData(true);
+    }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [busyBoardId]);
 
   const summary = useMemo(() => {
     const boards = training?.boards ?? [];
@@ -80,9 +99,37 @@ export default function TrainerLivePage() {
     };
   }, [training]);
 
-  async function control(board: LiveBoard, action: "pause" | "resume" | "skip" | "finish_exercise" | "reorder", extra: Record<string, unknown> = {}) {
-    if (action === "finish_exercise" && !window.confirm(`Aktuelle Übung an ${board.board.name} wirklich vorzeitig beenden?`)) return;
-    setBusyBoardId(board.id); setMessage("");
+  async function requestConfirmation(board: LiveBoard, action: ControlAction) {
+    if (action === "finish_exercise") {
+      const finalExercise = board.exerciseIndex + 1 >= board.totalExercises;
+      return confirm({
+        title: finalExercise ? "Letzte Übung abschließen?" : "Aktuelle Übung abschließen?",
+        message: finalExercise
+          ? `Damit wird die letzte Übung an ${board.board.name} beendet und das Board-Training abgeschlossen.`
+          : `Die aktuelle Übung an ${board.board.name} wird beendet. Anschließend wird die nächste Übung mit einer neuen zufälligen Reihenfolge vorbereitet.`,
+        confirmLabel: finalExercise ? "Training abschließen" : "Nächste Übung starten",
+        cancelLabel: "Weiter trainieren",
+        destructive: finalExercise,
+      });
+    }
+
+    if (action === "finish_board") {
+      return confirm({
+        title: `Training an ${board.board.name} beenden?`,
+        message: "Das gesamte Board-Training wird sofort abgeschlossen. Nicht beendete Übungen werden übersprungen, vorhandene Ergebnisse bleiben gespeichert.",
+        confirmLabel: "Board-Training beenden",
+        cancelLabel: "Abbrechen",
+        destructive: true,
+      });
+    }
+
+    return true;
+  }
+
+  async function control(board: LiveBoard, action: ControlAction, extra: Record<string, unknown> = {}) {
+    if (!(await requestConfirmation(board, action))) return;
+    setBusyBoardId(board.id);
+    setMessage("");
     try {
       const response = await fetch("/api/trainer/live/control", {
         method: "POST",
@@ -91,10 +138,14 @@ export default function TrainerLivePage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Traineraktion fehlgeschlagen.");
-      setMessage(`${board.board.name}: ${data.message ?? "Aktion ausgeführt."}`);
+      const text = data.message ?? "Aktion ausgeführt.";
+      setMessage(`${board.board.name}: ${text}`);
+      notify(text, { message: board.board.name, tone: action === "finish_board" || data.completed ? "success" : "info" });
       await loadLiveData(true);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Traineraktion fehlgeschlagen.");
+      const text = error instanceof Error ? error.message : "Traineraktion fehlgeschlagen.";
+      setMessage(text);
+      notify("Aktion nicht möglich", { message: text, tone: "error" });
     } finally {
       setBusyBoardId(null);
     }
@@ -111,29 +162,49 @@ export default function TrainerLivePage() {
   }
 
   if (loading) {
-    return <main className={`${styles.root} dashboard-page`}><section className="card"><h1>Live-Training</h1><p>Live-Daten werden geladen …</p></section></main>;
+    return (
+      <main className={`${styles.root} dashboard-page`}>
+        <section className="trainer-live-loading" aria-label="Live Center wird geladen">
+          <div /><div /><div />
+        </section>
+      </main>
+    );
   }
 
   if (!training) {
-    return <main className={`${styles.root} dashboard-page`}><section className="card"><div className="eyebrow">Trainerbereich</div><h1>Kein Live-Training</h1><p>{message || "Aktuell ist kein Trainingstag veröffentlicht oder gestartet."}</p></section></main>;
+    return (
+      <main className={`${styles.root} dashboard-page`}>
+        <section className="vdc-empty-state trainer-live-empty">
+          <span aria-hidden="true">◎</span>
+          <strong>Kein Live-Training aktiv</strong>
+          <p>{message || "Aktuell ist kein Trainingstag veröffentlicht oder gestartet."}</p>
+          <button className="button secondary" onClick={() => void loadLiveData()}>Erneut prüfen</button>
+        </section>
+      </main>
+    );
   }
 
   return (
-    <main className={`${styles.root} dashboard-page`}>
-      <section className="dashboard-heading">
+    <main className={`${styles.root} dashboard-page trainer-live-page`}>
+      <header className="vdc-page-heading trainer-live-heading">
         <div>
-          <div className="eyebrow">Trainer Live</div>
-          <h1>{training.trainingPlan.title}</h1>
-          <p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten · {new Date(training.trainingDate).toLocaleString("de-DE")}</p>
+          <span className="vdc-kicker">Trainersteuerung</span>
+          <h1>Live Center</h1>
+          <p>{training.trainingPlan.title} · {training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten</p>
         </div>
-        <span className="status">Aktualisierung alle 5 Sekunden</span>
-      </section>
+        <div className="trainer-live-refresh">
+          <span><i />Automatische Aktualisierung</span>
+          <small>{lastUpdated ? `Stand ${lastUpdated.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Wird geladen"}</small>
+          <button className="button secondary" disabled={busyBoardId !== null} onClick={() => void loadLiveData()}>Jetzt aktualisieren</button>
+        </div>
+      </header>
 
-      <section className="stats-row">
-        <article><small>Boards laufen</small><strong>{summary.running}</strong><span>Aktive Gruppen</span></article>
-        <article><small>Boards pausiert</small><strong>{summary.paused}</strong><span>Vom Trainer angehalten</span></article>
-        <article><small>Boards fertig</small><strong>{summary.completed}</strong><span>Training beendet</span></article>
-        <article><small>Ergebnisse</small><strong>{summary.results}</strong><span>Gespeicherte Einträge</span></article>
+      <section className="trainer-live-summary">
+        <article><small>Laufende Boards</small><strong>{summary.running}</strong><span>aktive Gruppen</span></article>
+        <article><small>Pausierte Boards</small><strong>{summary.paused}</strong><span>Stand gespeichert</span></article>
+        <article><small>Wartende Boards</small><strong>{summary.waiting}</strong><span>noch nicht gestartet</span></article>
+        <article><small>Abgeschlossen</small><strong>{summary.completed}</strong><span>fertige Boards</span></article>
+        <article><small>Ergebnisse</small><strong>{summary.results}</strong><span>gespeicherte Einträge</span></article>
       </section>
 
       {message && <p className="form-message trainer-live-message">{message}</p>}
@@ -143,48 +214,79 @@ export default function TrainerLivePage() {
           const order = orders[board.id] ?? board.players.map((player) => player.id);
           const orderedPlayers = order.map((id) => board.players.find((player) => player.id === id)).filter((player): player is Player => Boolean(player));
           const busy = busyBoardId === board.id;
+          const active = board.status === "RUNNING" || board.status === "PAUSED";
+          const finalExercise = board.exerciseIndex + 1 >= board.totalExercises;
+
           return (
-            <article className={`trainer-live-card status-${board.status.toLowerCase()}`} key={board.id}>
-              <div className="trainer-live-top">
+            <article className={`trainer-live-card status-${board.status.toLowerCase()}`} key={board.id} aria-busy={busy}>
+              <header className="trainer-live-card-head">
                 <div>
-                  <span className="eyebrow">{board.board.name}</span>
+                  <span className="trainer-board-label">{board.board.name}</span>
                   <h2>{statusLabel(board.status)}</h2>
+                  <p>{statusDescription(board.status)}</p>
                 </div>
-                <span className="status">{board.exerciseIndex + (board.status === "COMPLETED" ? 0 : 1)} / {board.totalExercises}</span>
+                <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
+              </header>
+
+              <section className="trainer-live-progress-block">
+                <div><small>Trainingsfortschritt</small><strong>{board.progressPercent}%</strong></div>
+                <div className="trainer-progress"><span style={{ width: `${board.progressPercent}%` }} /></div>
+                <div className="trainer-progress-copy">
+                  <span>Übung {board.status === "COMPLETED" ? board.totalExercises : Math.min(board.exerciseIndex + 1, board.totalExercises)} von {board.totalExercises}</span>
+                  <span>{board.resultCount} Ergebnisse</span>
+                </div>
+              </section>
+
+              <div className="trainer-live-focus-grid">
+                <section className="trainer-current">
+                  <small>Aktuelle Übung</small>
+                  <strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong>
+                  {board.currentExercise?.description && <p>{board.currentExercise.description}</p>}
+                </section>
+
+                <section className="trainer-current-player">
+                  <small>Aktiver Spieler</small>
+                  <strong>{board.currentPlayer?.displayName ?? "—"}</strong>
+                  <span>{board.players.length} Spieler am Board</span>
+                </section>
               </div>
 
-              <div className="trainer-progress"><span style={{ width: `${board.progressPercent}%` }} /></div>
-              <div className="trainer-progress-copy"><span>{board.progressPercent}%</span><span>{board.resultCount} Ergebnisse</span></div>
+              <section className="trainer-control-section">
+                <header><small>Boardsteuerung</small><span>{busy ? "Aktion läuft …" : "Bereit"}</span></header>
+                <div className="trainer-primary-controls">
+                  {board.status === "RUNNING" && <button className="button secondary" disabled={busy} onClick={() => void control(board, "pause")}>Training pausieren</button>}
+                  {board.status === "PAUSED" && <button className="button" disabled={busy} onClick={() => void control(board, "resume")}>Training fortsetzen</button>}
+                  {board.status === "RUNNING" && board.players.length > 1 && <button className="button secondary" disabled={busy} onClick={() => void control(board, "skip")}>Nächster Spieler</button>}
+                </div>
 
-              <div className="trainer-current">
-                <small>Aktuelle Übung</small>
-                <strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong>
-                {board.currentExercise?.description && <p>{board.currentExercise.description}</p>}
-              </div>
+                {active && (
+                  <div className="trainer-exercise-controls">
+                    <button className="button" disabled={busy || !board.currentExercise} onClick={() => void control(board, "finish_exercise")}>
+                      {finalExercise ? "Letzte Übung abschließen" : "Übung abschließen & weiter"}
+                    </button>
+                    <button className="button danger-outline" disabled={busy} onClick={() => void control(board, "finish_board")}>Board-Training beenden</button>
+                  </div>
+                )}
+              </section>
 
-              <div className="trainer-current-player">
-                <small>Aktueller Spieler</small>
-                <strong>{board.currentPlayer?.displayName ?? "—"}</strong>
-              </div>
-
-              <div className="trainer-controls">
-                {board.status === "RUNNING" && <button disabled={busy} onClick={() => void control(board, "pause")}>Pausieren</button>}
-                {board.status === "PAUSED" && <button disabled={busy} onClick={() => void control(board, "resume")}>Fortsetzen</button>}
-                {board.status === "RUNNING" && board.players.length > 1 && <button disabled={busy} onClick={() => void control(board, "skip")}>Spieler überspringen</button>}
-                {board.status === "RUNNING" && <button disabled={busy} onClick={() => void control(board, "finish_exercise")}>Übung beenden</button>}
-              </div>
-
-              <div className="trainer-order-box">
-                <div className="trainer-order-head"><small>Reihenfolge</small><button disabled={busy || board.status === "NOT_STARTED" || board.status === "COMPLETED"} onClick={() => void control(board, "reorder", { order })}>Speichern</button></div>
+              <section className="trainer-order-box">
+                <div className="trainer-order-head">
+                  <div><small>Spielerreihenfolge</small><span>Aktiver Spieler bleibt nach dem Speichern erhalten.</span></div>
+                  <button className="button secondary" disabled={busy || !active} onClick={() => void control(board, "reorder", { order })}>Reihenfolge speichern</button>
+                </div>
                 <div className="trainer-order-list">
                   {orderedPlayers.map((player, index) => (
                     <div className={board.currentPlayer?.id === player.id ? "is-current" : ""} key={player.id}>
-                      <span>{index + 1}</span><strong>{player.displayName}</strong>
-                      <div><button disabled={busy || index === 0} onClick={() => movePlayer(board.id, index, -1)}>↑</button><button disabled={busy || index === orderedPlayers.length - 1} onClick={() => movePlayer(board.id, index, 1)}>↓</button></div>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div><strong>{player.displayName}</strong>{board.currentPlayer?.id === player.id && <small>Aktuell am Zug</small>}</div>
+                      <div className="trainer-order-actions">
+                        <button disabled={busy || !active || index === 0} onClick={() => movePlayer(board.id, index, -1)} aria-label={`${player.displayName} nach oben verschieben`}>↑</button>
+                        <button disabled={busy || !active || index === orderedPlayers.length - 1} onClick={() => movePlayer(board.id, index, 1)} aria-label={`${player.displayName} nach unten verschieben`}>↓</button>
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             </article>
           );
         })}
