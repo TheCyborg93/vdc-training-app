@@ -28,6 +28,14 @@ type LiveTraining = {
 };
 type ControlAction = "pause" | "resume" | "skip" | "finish_exercise" | "finish_board" | "reorder";
 
+type BoardDetailProps = {
+  board: LiveBoard;
+  order: number[];
+  busy: boolean;
+  onControl: (board: LiveBoard, action: ControlAction, extra?: Record<string, unknown>) => Promise<void>;
+  onMovePlayer: (boardId: number, index: number, direction: -1 | 1) => void;
+};
+
 function statusLabel(status: string) {
   if (status === "RUNNING") return "Läuft";
   if (status === "COMPLETED") return "Abgeschlossen";
@@ -42,6 +50,88 @@ function statusDescription(status: string) {
   return "Das Board wartet auf den Trainingsstart.";
 }
 
+function BoardDetail({ board, order, busy, onControl, onMovePlayer }: BoardDetailProps) {
+  const orderedPlayers = order
+    .map((id) => board.players.find((player) => player.id === id))
+    .filter((player): player is Player => Boolean(player));
+  const active = board.status === "RUNNING" || board.status === "PAUSED";
+  const finalExercise = board.exerciseIndex + 1 >= board.totalExercises;
+
+  return (
+    <div className="trainer-focus-content" aria-busy={busy}>
+      <header className="trainer-focus-board-head">
+        <div>
+          <span className="trainer-board-label">{board.board.name}</span>
+          <h2>{statusLabel(board.status)}</h2>
+          <p>{statusDescription(board.status)}</p>
+        </div>
+        <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
+      </header>
+
+      <section className="trainer-live-progress-block trainer-focus-progress">
+        <div><small>Trainingsfortschritt</small><strong>{board.progressPercent}%</strong></div>
+        <div className="trainer-progress"><span style={{ width: `${board.progressPercent}%` }} /></div>
+        <div className="trainer-progress-copy">
+          <span>Übung {board.status === "COMPLETED" ? board.totalExercises : Math.min(board.exerciseIndex + 1, board.totalExercises)} von {board.totalExercises}</span>
+          <span>{board.resultCount} Ergebnisse</span>
+        </div>
+      </section>
+
+      <div className="trainer-live-focus-grid">
+        <section className="trainer-current">
+          <small>Aktuelle Übung</small>
+          <strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong>
+          {board.currentExercise?.description && <p>{board.currentExercise.description}</p>}
+        </section>
+
+        <section className="trainer-current-player">
+          <small>Aktiver Spieler</small>
+          <strong>{board.currentPlayer?.displayName ?? "—"}</strong>
+          <span>{board.players.length} Spieler am Board</span>
+        </section>
+      </div>
+
+      <section className="trainer-control-section trainer-focus-controls">
+        <header><small>Boardsteuerung</small><span>{busy ? "Aktion läuft …" : "Bereit"}</span></header>
+        <div className="trainer-primary-controls">
+          {board.status === "RUNNING" && <button className="button secondary" disabled={busy} onClick={() => void onControl(board, "pause")}>Training pausieren</button>}
+          {board.status === "PAUSED" && <button className="button" disabled={busy} onClick={() => void onControl(board, "resume")}>Training fortsetzen</button>}
+          {board.status === "RUNNING" && board.players.length > 1 && <button className="button secondary" disabled={busy} onClick={() => void onControl(board, "skip")}>Nächster Spieler</button>}
+        </div>
+
+        {active && (
+          <div className="trainer-exercise-controls">
+            <button className="button" disabled={busy || !board.currentExercise} onClick={() => void onControl(board, "finish_exercise")}>
+              {finalExercise ? "Letzte Übung abschließen" : "Übung abschließen & weiter"}
+            </button>
+            <button className="button danger-outline" disabled={busy} onClick={() => void onControl(board, "finish_board")}>Board-Training beenden</button>
+          </div>
+        )}
+      </section>
+
+      <section className="trainer-order-box trainer-focus-order">
+        <div className="trainer-order-head">
+          <div><small>Spielerreihenfolge</small><span>Aktiver Spieler bleibt nach dem Speichern erhalten.</span></div>
+          <button className="button secondary" disabled={busy || !active} onClick={() => void onControl(board, "reorder", { order })}>Reihenfolge speichern</button>
+        </div>
+        <div className="trainer-order-list">
+          {orderedPlayers.map((player, index) => (
+            <div className={board.currentPlayer?.id === player.id ? "is-current" : ""} key={player.id}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <div><strong>{player.displayName}</strong>{board.currentPlayer?.id === player.id && <small>Aktuell am Zug</small>}</div>
+              <div className="trainer-order-actions">
+                <button disabled={busy || !active || index === 0} onClick={() => onMovePlayer(board.id, index, -1)} aria-label={`${player.displayName} nach oben verschieben`}>↑</button>
+                <button disabled={busy || !active || index === orderedPlayers.length - 1} onClick={() => onMovePlayer(board.id, index, 1)} aria-label={`${player.displayName} nach unten verschieben`}>↓</button>
+              </div>
+            </div>
+          ))}
+          {orderedPlayers.length === 0 && <div className="vdc-empty-line">Keine Spieler zugewiesen.</div>}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function TrainerLivePage() {
   const { confirm, notify } = useAppFeedback();
   const [training, setTraining] = useState<LiveTraining | null>(null);
@@ -50,6 +140,7 @@ export default function TrainerLivePage() {
   const [busyBoardId, setBusyBoardId] = useState<number | null>(null);
   const [orders, setOrders] = useState<Record<number, number[]>>({});
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState<number | null>(null);
 
   async function loadLiveData(silent = false) {
     try {
@@ -68,6 +159,10 @@ export default function TrainerLivePage() {
             if (!samePlayers) next[board.id] = playerIds;
           }
           return next;
+        });
+        setSelectedBoardId((current) => {
+          if (current && (data.boards as LiveBoard[]).some((board) => board.id === current)) return current;
+          return (data.boards as LiveBoard[])[0]?.id ?? null;
         });
       }
       if (!silent) setMessage("");
@@ -88,6 +183,14 @@ export default function TrainerLivePage() {
     return () => window.clearInterval(timer);
   }, [busyBoardId]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedBoardId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const summary = useMemo(() => {
     const boards = training?.boards ?? [];
     return {
@@ -98,6 +201,9 @@ export default function TrainerLivePage() {
       results: boards.reduce((sum, board) => sum + board.resultCount, 0),
     };
   }, [training]);
+
+  const selectedBoard = training?.boards.find((board) => board.id === selectedBoardId) ?? null;
+  const selectedIndex = selectedBoard && training ? training.boards.findIndex((board) => board.id === selectedBoard.id) : -1;
 
   async function requestConfirmation(board: LiveBoard, action: ControlAction) {
     if (action === "finish_exercise") {
@@ -161,12 +267,16 @@ export default function TrainerLivePage() {
     });
   }
 
+  function selectRelativeBoard(direction: -1 | 1) {
+    if (!training?.boards.length || selectedIndex < 0) return;
+    const nextIndex = (selectedIndex + direction + training.boards.length) % training.boards.length;
+    setSelectedBoardId(training.boards[nextIndex].id);
+  }
+
   if (loading) {
     return (
       <main className={`${styles.root} dashboard-page`}>
-        <section className="trainer-live-loading" aria-label="Live Center wird geladen">
-          <div /><div /><div />
-        </section>
+        <section className="trainer-live-loading" aria-label="Live Center wird geladen"><div /><div /><div /></section>
       </main>
     );
   }
@@ -175,8 +285,7 @@ export default function TrainerLivePage() {
     return (
       <main className={`${styles.root} dashboard-page`}>
         <section className="vdc-empty-state trainer-live-empty">
-          <span aria-hidden="true">◎</span>
-          <strong>Kein Live-Training aktiv</strong>
+          <span aria-hidden="true">◎</span><strong>Kein Live-Training aktiv</strong>
           <p>{message || "Aktuell ist kein Trainingstag veröffentlicht oder gestartet."}</p>
           <button className="button secondary" onClick={() => void loadLiveData()}>Erneut prüfen</button>
         </section>
@@ -209,88 +318,64 @@ export default function TrainerLivePage() {
 
       {message && <p className="form-message trainer-live-message">{message}</p>}
 
-      <section className="trainer-live-grid">
-        {training.boards.map((board) => {
-          const order = orders[board.id] ?? board.players.map((player) => player.id);
-          const orderedPlayers = order.map((id) => board.players.find((player) => player.id === id)).filter((player): player is Player => Boolean(player));
-          const busy = busyBoardId === board.id;
-          const active = board.status === "RUNNING" || board.status === "PAUSED";
-          const finalExercise = board.exerciseIndex + 1 >= board.totalExercises;
+      <nav className="trainer-board-switcher" aria-label="Board auswählen">
+        {training.boards.map((board) => (
+          <button key={board.id} className={selectedBoardId === board.id ? "is-active" : ""} onClick={() => setSelectedBoardId(board.id)}>
+            <i className={`status-${board.status.toLowerCase()}`} />
+            <span>{board.board.name}</span>
+            <small>{board.progressPercent}%</small>
+          </button>
+        ))}
+      </nav>
 
-          return (
-            <article className={`trainer-live-card status-${board.status.toLowerCase()}`} key={board.id} aria-busy={busy}>
-              <header className="trainer-live-card-head">
-                <div>
-                  <span className="trainer-board-label">{board.board.name}</span>
-                  <h2>{statusLabel(board.status)}</h2>
-                  <p>{statusDescription(board.status)}</p>
-                </div>
-                <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
-              </header>
-
-              <section className="trainer-live-progress-block">
-                <div><small>Trainingsfortschritt</small><strong>{board.progressPercent}%</strong></div>
-                <div className="trainer-progress"><span style={{ width: `${board.progressPercent}%` }} /></div>
-                <div className="trainer-progress-copy">
-                  <span>Übung {board.status === "COMPLETED" ? board.totalExercises : Math.min(board.exerciseIndex + 1, board.totalExercises)} von {board.totalExercises}</span>
-                  <span>{board.resultCount} Ergebnisse</span>
-                </div>
-              </section>
-
-              <div className="trainer-live-focus-grid">
-                <section className="trainer-current">
-                  <small>Aktuelle Übung</small>
-                  <strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong>
-                  {board.currentExercise?.description && <p>{board.currentExercise.description}</p>}
-                </section>
-
-                <section className="trainer-current-player">
-                  <small>Aktiver Spieler</small>
-                  <strong>{board.currentPlayer?.displayName ?? "—"}</strong>
-                  <span>{board.players.length} Spieler am Board</span>
-                </section>
+      <section className="trainer-live-grid trainer-board-wall-v4">
+        {training.boards.map((board) => (
+          <article className={`trainer-live-card trainer-board-overview status-${board.status.toLowerCase()}`} key={board.id} aria-busy={busyBoardId === board.id}>
+            <header className="trainer-live-card-head">
+              <div><span className="trainer-board-label">{board.board.name}</span><h2>{statusLabel(board.status)}</h2></div>
+              <span className={`vdc-status-badge is-${board.status.toLowerCase()}`}><i />{statusLabel(board.status)}</span>
+            </header>
+            <div className="trainer-board-overview-main">
+              <div className="trainer-board-progress-ring" style={{ "--board-progress": `${board.progressPercent * 3.6}deg` } as React.CSSProperties}>
+                <strong>{board.progressPercent}%</strong><small>Fortschritt</small>
               </div>
-
-              <section className="trainer-control-section">
-                <header><small>Boardsteuerung</small><span>{busy ? "Aktion läuft …" : "Bereit"}</span></header>
-                <div className="trainer-primary-controls">
-                  {board.status === "RUNNING" && <button className="button secondary" disabled={busy} onClick={() => void control(board, "pause")}>Training pausieren</button>}
-                  {board.status === "PAUSED" && <button className="button" disabled={busy} onClick={() => void control(board, "resume")}>Training fortsetzen</button>}
-                  {board.status === "RUNNING" && board.players.length > 1 && <button className="button secondary" disabled={busy} onClick={() => void control(board, "skip")}>Nächster Spieler</button>}
-                </div>
-
-                {active && (
-                  <div className="trainer-exercise-controls">
-                    <button className="button" disabled={busy || !board.currentExercise} onClick={() => void control(board, "finish_exercise")}>
-                      {finalExercise ? "Letzte Übung abschließen" : "Übung abschließen & weiter"}
-                    </button>
-                    <button className="button danger-outline" disabled={busy} onClick={() => void control(board, "finish_board")}>Board-Training beenden</button>
-                  </div>
-                )}
-              </section>
-
-              <section className="trainer-order-box">
-                <div className="trainer-order-head">
-                  <div><small>Spielerreihenfolge</small><span>Aktiver Spieler bleibt nach dem Speichern erhalten.</span></div>
-                  <button className="button secondary" disabled={busy || !active} onClick={() => void control(board, "reorder", { order })}>Reihenfolge speichern</button>
-                </div>
-                <div className="trainer-order-list">
-                  {orderedPlayers.map((player, index) => (
-                    <div className={board.currentPlayer?.id === player.id ? "is-current" : ""} key={player.id}>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <div><strong>{player.displayName}</strong>{board.currentPlayer?.id === player.id && <small>Aktuell am Zug</small>}</div>
-                      <div className="trainer-order-actions">
-                        <button disabled={busy || !active || index === 0} onClick={() => movePlayer(board.id, index, -1)} aria-label={`${player.displayName} nach oben verschieben`}>↑</button>
-                        <button disabled={busy || !active || index === orderedPlayers.length - 1} onClick={() => movePlayer(board.id, index, 1)} aria-label={`${player.displayName} nach unten verschieben`}>↓</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </article>
-          );
-        })}
+              <div className="trainer-board-overview-copy">
+                <small>Aktuelle Übung</small>
+                <strong>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</strong>
+                <span>{board.currentPlayer?.displayName ?? "Kein aktiver Spieler"}</span>
+              </div>
+            </div>
+            <div className="trainer-board-overview-meta">
+              <span>Übung {board.status === "COMPLETED" ? board.totalExercises : Math.min(board.exerciseIndex + 1, board.totalExercises)} / {board.totalExercises}</span>
+              <span>{board.players.length} Spieler</span>
+              <span>{board.resultCount} Ergebnisse</span>
+            </div>
+            <button className="button secondary trainer-board-focus-button" onClick={() => setSelectedBoardId(board.id)}>Board steuern</button>
+          </article>
+        ))}
       </section>
+
+      {selectedBoard && (
+        <div className="trainer-focus-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}>
+          <aside className="trainer-focus-drawer" role="dialog" aria-modal="true" aria-label={`${selectedBoard.board.name} steuern`}>
+            <div className="trainer-focus-toolbar">
+              <div className="trainer-focus-navigation">
+                <button onClick={() => selectRelativeBoard(-1)} aria-label="Vorheriges Board">←</button>
+                <span>{selectedIndex + 1} / {training.boards.length}</span>
+                <button onClick={() => selectRelativeBoard(1)} aria-label="Nächstes Board">→</button>
+              </div>
+              <button className="trainer-focus-close" onClick={() => setSelectedBoardId(null)} aria-label="Fokusansicht schließen">×</button>
+            </div>
+            <BoardDetail
+              board={selectedBoard}
+              order={orders[selectedBoard.id] ?? selectedBoard.players.map((player) => player.id)}
+              busy={busyBoardId === selectedBoard.id}
+              onControl={control}
+              onMovePlayer={movePlayer}
+            />
+          </aside>
+        </div>
+      )}
     </main>
   );
 }
