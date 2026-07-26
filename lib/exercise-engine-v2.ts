@@ -65,11 +65,14 @@ export function normalizeEngineVisit(kind: string, configValue: unknown, rawValu
     checkoutType: ["NONE", "SINGLE", "DOUBLE", "TREBLE"].includes(String(raw.checkoutType)) ? String(raw.checkoutType) : "NONE",
     doubleIn: raw.doubleIn === true,
   };
-  if (definition.inputMode === "CHECKOUT") return {
-    checkout: raw.checkout === true,
-    dartsUsed: clamp(raw.dartsUsed, 1, definition.maxDarts ?? 3),
-    score: raw.score == null ? undefined : clamp(raw.score, 0, 180),
-  };
+  if (definition.inputMode === "CHECKOUT") {
+    const result: Record<string, unknown> = {
+      checkout: raw.checkout === true,
+      dartsUsed: clamp(raw.dartsUsed, 1, definition.maxDarts ?? 3),
+    };
+    if (raw.score != null) result.score = clamp(raw.score, 0, 180);
+    return result;
+  }
   if (definition.inputMode === "CRICKET") return {
     target: String(raw.target ?? ""),
     marks: clamp(raw.marks ?? raw.hits, 0, 3),
