@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createInitialExerciseState } from "@/lib/exercise-session-engine";
@@ -27,14 +28,16 @@ export async function POST(request: Request) {
     if (!firstExercise) return NextResponse.json({ error: "Der Trainingsplan enthält keine Übungen." }, { status: 400 });
 
     const order = shuffle(assignments.map((assignment) => assignment.playerId));
-    const initialState = createInitialExerciseState(firstExercise.exercise);
-    const playerStates = Object.fromEntries(order.map((playerId) => [String(playerId), initialState]));
+    const playerStates = Object.fromEntries(
+      order.map((playerId) => [String(playerId), createInitialExerciseState(firstExercise.exercise)]),
+    );
     const progress = { order, exerciseIndex: 0, playerIndex: 0, roundNumber: 1, playerStates };
+    const progressJson = progress as unknown as Prisma.InputJsonValue;
 
     const session = await prisma.$transaction(async (tx) => {
       const updated = await tx.boardSession.update({
         where: { trainingDayId_boardId: { trainingDayId, boardId } },
-        data: { status: "RUNNING", startedAt: new Date(), currentExerciseId: firstExercise.exerciseId, randomOrderJson: progress },
+        data: { status: "RUNNING", startedAt: new Date(), currentExerciseId: firstExercise.exerciseId, randomOrderJson: progressJson },
         include: { board: true },
       });
       await tx.trainingDay.update({ where: { id: trainingDayId }, data: { status: "RUNNING" } });
