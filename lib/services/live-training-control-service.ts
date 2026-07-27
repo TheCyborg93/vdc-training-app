@@ -157,6 +157,7 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
     playerStates,
   };
 
-  await advanceBoardExercise(session.id, session.status, exercise.id, nextProgress);
+  const activeStatus = session.status === "PAUSED" ? "PAUSED" : "RUNNING";
+  await advanceBoardExercise(session.id, activeStatus, exercise.id, nextProgress);
   return { completed: false, message: "Übung abgeschlossen. Die nächste Übung ist vorbereitet." };
 }
