@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
+import "../vdc-phase6-dashboard.css";
 
 export const dynamic = "force-dynamic";
 
