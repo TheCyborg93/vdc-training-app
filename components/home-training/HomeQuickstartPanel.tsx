@@ -1,74 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-type Recommendation = {
-  id: number;
-  title: string;
-  goal: string;
-  durationMin: number;
-  exerciseCount: number;
-  priority: boolean;
-};
-
-type QuickstartData = {
-  activeSession: { id: number; homeTrainingPlanId: number; status: string } | null;
-  priorityFocus: string;
-  weekProgress: number;
-  weeklyTarget: number;
-  recommendations: Recommendation[];
-  suggestedDays: { date: string; label: string; focus: string }[];
-};
+import { useMemo, useState } from "react";
+import { useHomeInsights } from "./HomeInsightsProvider";
 
 const BUDGETS = [30, 45, 60, 90];
 
 export default function HomeQuickstartPanel() {
-  const [playerId, setPlayerId] = useState<number | null>(null);
-  const [data, setData] = useState<QuickstartData | null>(null);
+  const { playerId, data: insights, loading, error: insightsError } = useHomeInsights();
+  const data = insights?.quickstart ?? null;
   const [budget, setBudget] = useState(45);
-  const [loading, setLoading] = useState(true);
   const [startingId, setStartingId] = useState<number | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    let cleanup = () => {};
-    function connect() {
-      const select = document.querySelector<HTMLSelectElement>("#home-player");
-      if (!select) {
-        window.setTimeout(connect, 120);
-        return;
-      }
-      const sync = () => {
-        const value = Number(select.value);
-        if (!cancelled && Number.isInteger(value)) setPlayerId(value);
-      };
-      sync();
-      select.addEventListener("change", sync);
-      cleanup = () => select.removeEventListener("change", sync);
-    }
-    connect();
-    return () => { cancelled = true; cleanup(); };
-  }, []);
-
-  useEffect(() => {
-    if (!playerId) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetch(`/api/home-training/quickstart?playerId=${playerId}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "Schnellstart konnte nicht geladen werden.");
-        setData(payload as QuickstartData);
-      })
-      .catch((reason: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "Schnellstart konnte nicht geladen werden.");
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [playerId]);
+  const [localError, setLocalError] = useState("");
 
   const bestPlan = useMemo(() => {
     if (!data?.recommendations.length) return null;
@@ -79,10 +21,10 @@ export default function HomeQuickstartPanel() {
     })[0] ?? null;
   }, [data, budget]);
 
-  async function start(plan: Recommendation) {
+  async function start(plan: NonNullable<typeof bestPlan>) {
     if (!playerId || data?.activeSession) return;
     setStartingId(plan.id);
-    setError("");
+    setLocalError("");
     try {
       const response = await fetch("/api/home-training/session", {
         method: "POST",
@@ -93,12 +35,13 @@ export default function HomeQuickstartPanel() {
       if (!response.ok) throw new Error(payload.error ?? "Training konnte nicht gestartet werden.");
       window.location.reload();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Training konnte nicht gestartet werden.");
+      setLocalError(reason instanceof Error ? reason.message : "Training konnte nicht gestartet werden.");
       setStartingId(null);
     }
   }
 
   if (!playerId) return null;
+  const error = localError || insightsError;
 
   return (
     <section className="home-quickstart-shell" aria-label="Intelligenter Trainingsschnellstart">
