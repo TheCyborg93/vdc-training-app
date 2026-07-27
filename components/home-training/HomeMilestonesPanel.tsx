@@ -1,88 +1,16 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
-
-type Milestone = {
-  key: string;
-  title: string;
-  description: string;
-  current: number;
-  target: number;
-  unit: string;
-  unlocked: boolean;
-};
-
-type MilestoneData = {
-  summary: {
-    unlocked: number;
-    total: number;
-    activityDays: number;
-    completedSessions: number;
-    totalResults: number;
-    totalMinutes: number;
-    bestScore: number;
-  };
-  next: Milestone | null;
-  milestones: Milestone[];
-};
+import { useState, type CSSProperties } from "react";
+import { useHomeInsights, type Milestone } from "./HomeInsightsProvider";
 
 function progress(item: Milestone) {
   return Math.min(100, Math.round((item.current / Math.max(item.target, 1)) * 100));
 }
 
 export default function HomeMilestonesPanel() {
-  const [playerId, setPlayerId] = useState<number | null>(null);
-  const [data, setData] = useState<MilestoneData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { playerId, data: insights, loading, error } = useHomeInsights();
+  const data = insights?.milestones ?? null;
   const [showAll, setShowAll] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let cleanup = () => {};
-
-    function connect() {
-      const select = document.querySelector<HTMLSelectElement>("#home-player");
-      if (!select) {
-        window.setTimeout(connect, 120);
-        return;
-      }
-      const sync = () => {
-        const value = Number(select.value);
-        if (!cancelled && Number.isInteger(value)) setPlayerId(value);
-      };
-      sync();
-      select.addEventListener("change", sync);
-      cleanup = () => select.removeEventListener("change", sync);
-    }
-
-    connect();
-    return () => {
-      cancelled = true;
-      cleanup();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!playerId) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetch(`/api/home-training/milestones?playerId=${playerId}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "Meilensteine konnten nicht geladen werden.");
-        setData(payload as MilestoneData);
-      })
-      .catch((reason: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "Meilensteine konnten nicht geladen werden.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [playerId]);
 
   if (!playerId) return null;
 
