@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import LiveBoardManagement from "@/components/trainer/LiveBoardManagement";
 import { useAppFeedback } from "@/components/ui/app-feedback";
 
 type Player = { id: number; displayName: string };
 type LiveBoard = {
   id: number;
-  board: { id: number; name: string };
+  board: { id: number; name: string; location?: string | null; available?: boolean };
   status: "NOT_STARTED" | "RUNNING" | "PAUSED" | "COMPLETED";
   startedAt: string | null;
   completedAt: string | null;
@@ -26,6 +27,8 @@ type LiveTraining = {
   trainingDate: string;
   status: string;
   trainingPlan: { title: string; goal: string; durationMin: number };
+  roster: Player[];
+  unassignedPlayers: Player[];
   boards: LiveBoard[];
 };
 
@@ -245,6 +248,8 @@ export default function TrainerLivePage() {
         <div className="phase6-kpis"><article><span>Aktiv</span><strong>{summary.running}</strong></article><article><span>Pause</span><strong>{summary.paused}</strong></article><article><span>Fertig</span><strong>{summary.completed}</strong></article><article><span>Offen</span><strong>{summary.waiting}</strong></article><article><span>Spieler</span><strong>{summary.players}</strong></article></div>
       </section>
 
+      <LiveBoardManagement trainingDayId={training.id} boards={training.boards} unassignedPlayers={training.unassignedPlayers ?? []} onChanged={() => load(true)} />
+
       <section className="phase6-live-layout">
         <div className="phase6-board-grid">
           {training.boards.map((board) => {
@@ -252,7 +257,7 @@ export default function TrainerLivePage() {
             return (
               <button className={`phase6-board-card status-${board.status.toLowerCase()} health-${health.level}`} key={board.id} onClick={() => setSelectedBoardId(board.id)}>
                 <header><div><span>{board.board.name}</span><strong>{statusLabel(board.status)}</strong></div><em className={`is-${health.level}`}><i />{health.label}</em></header>
-                <div className="phase6-board-players">{board.players.map((player) => <span className={player.id === board.currentPlayer?.id ? "is-current" : ""} key={player.id}>{player.displayName}</span>)}</div>
+                <div className="phase6-board-players">{board.players.map((player) => <span className={player.id === board.currentPlayer?.id ? "is-current" : ""} key={player.id}>{player.displayName}</span>)}{board.players.length === 0 && <span>Board frei</span>}</div>
                 <section><small>Aktuelle Übung</small><h2>{board.currentExercise?.name ?? (board.status === "COMPLETED" ? "Training abgeschlossen" : "Noch nicht gestartet")}</h2><p>{health.detail}</p></section>
                 <div className="phase6-board-progress"><div><i><b style={{ width: `${board.progressPercent}%` }} /></i><strong>{board.progressPercent}%</strong></div><small>Übung {Math.min(board.exerciseIndex + 1, board.totalExercises)} / {board.totalExercises}</small></div>
                 <footer><span>{formatDuration(board.startedAt, board.completedAt, clock)}</span><span>{board.resultCount} Ergebnisse</span></footer>
@@ -269,7 +274,7 @@ export default function TrainerLivePage() {
 
       <nav className="phase6-global-actions"><button disabled={bulkBusy || summary.running === 0} onClick={() => void runBulk("pause")}>Alle pausieren</button><button disabled={bulkBusy || summary.paused === 0} onClick={() => void runBulk("resume")}>Alle fortsetzen</button><button disabled={bulkBusy || summary.running + summary.paused === 0} onClick={() => void runBulk("finish_exercise")}>Alle nächste Übung</button><button className="is-danger" disabled={bulkBusy || summary.running + summary.paused === 0} onClick={() => void runBulk("finish_board")}>Training beenden</button></nav>
 
-      {selectedBoard && <div className="phase6-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}><aside className="phase6-board-drawer" role="dialog" aria-modal="true"><button className="phase6-drawer-close" onClick={() => setSelectedBoardId(null)}>×</button><header><span>{selectedBoard.board.name}</span><h2>{selectedBoard.currentExercise?.name ?? statusLabel(selectedBoard.status)}</h2><p>{selectedBoard.players.map((player) => player.displayName).join(" · ")}</p></header><div className="phase6-drawer-kpis"><article><span>Fortschritt</span><strong>{selectedBoard.progressPercent}%</strong></article><article><span>Laufzeit</span><strong>{formatDuration(selectedBoard.startedAt, selectedBoard.completedAt, clock)}</strong></article><article><span>Ergebnisse</span><strong>{selectedBoard.resultCount}</strong></article><article><span>Aktiv</span><strong>{selectedBoard.currentPlayer?.displayName ?? "–"}</strong></article></div><section className="phase6-drawer-actions">{selectedBoard.status === "RUNNING" && <button onClick={() => void boardAction(selectedBoard, "pause")}>Pause</button>}{selectedBoard.status === "PAUSED" && <button onClick={() => void boardAction(selectedBoard, "resume")}>Fortsetzen</button>}{selectedBoard.status === "RUNNING" && selectedBoard.players.length > 1 && <button onClick={() => void boardAction(selectedBoard, "skip")}>Nächster Spieler</button>} {(selectedBoard.status === "RUNNING" || selectedBoard.status === "PAUSED") && <button onClick={() => void boardAction(selectedBoard, "finish_exercise")}>Nächste Übung</button>} {(selectedBoard.status === "RUNNING" || selectedBoard.status === "PAUSED") && <button className="is-danger" onClick={() => void boardAction(selectedBoard, "finish_board")}>Board beenden</button>}</section></aside></div>}
+      {selectedBoard && <div className="phase6-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedBoardId(null); }}><aside className="phase6-board-drawer" role="dialog" aria-modal="true"><button className="phase6-drawer-close" onClick={() => setSelectedBoardId(null)}>×</button><header><span>{selectedBoard.board.name}</span><h2>{selectedBoard.currentExercise?.name ?? statusLabel(selectedBoard.status)}</h2><p>{selectedBoard.players.map((player) => player.displayName).join(" · ") || "Keine Spieler zugewiesen"}</p></header><div className="phase6-drawer-kpis"><article><span>Fortschritt</span><strong>{selectedBoard.progressPercent}%</strong></article><article><span>Laufzeit</span><strong>{formatDuration(selectedBoard.startedAt, selectedBoard.completedAt, clock)}</strong></article><article><span>Ergebnisse</span><strong>{selectedBoard.resultCount}</strong></article><article><span>Aktiv</span><strong>{selectedBoard.currentPlayer?.displayName ?? "–"}</strong></article></div><section className="phase6-drawer-actions">{selectedBoard.status === "RUNNING" && <button onClick={() => void boardAction(selectedBoard, "pause")}>Pause</button>}{selectedBoard.status === "PAUSED" && <button onClick={() => void boardAction(selectedBoard, "resume")}>Fortsetzen</button>}{selectedBoard.status === "RUNNING" && selectedBoard.players.length > 1 && <button onClick={() => void boardAction(selectedBoard, "skip")}>Nächster Spieler</button>} {(selectedBoard.status === "RUNNING" || selectedBoard.status === "PAUSED") && <button onClick={() => void boardAction(selectedBoard, "finish_exercise")}>Nächste Übung</button>} {(selectedBoard.status === "RUNNING" || selectedBoard.status === "PAUSED") && <button className="is-danger" onClick={() => void boardAction(selectedBoard, "finish_board")}>Board beenden</button>}</section></aside></div>}
     </main>
   );
 }
