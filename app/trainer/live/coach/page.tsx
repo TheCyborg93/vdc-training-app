@@ -3,52 +3,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppFeedback } from "@/components/ui/app-feedback";
-
-type Player = { id: number; displayName: string };
-type LiveBoard = {
-  id: number;
-  board: { id: number; name: string };
-  status: "NOT_STARTED" | "RUNNING" | "PAUSED" | "COMPLETED";
-  startedAt: string | null;
-  lastResultAt: string | null;
-  players: Player[];
-  currentPlayer: Player | null;
-  currentExercise: { id: number; name: string } | null;
-  progressPercent: number;
-  resultCount: number;
-};
-type LiveTraining = {
-  id: number;
-  status: string;
-  trainingDate: string;
-  trainingPlan: { title: string; goal: string; durationMin: number };
-  boards: LiveBoard[];
-};
-type Priority = "critical" | "warning" | "good" | "waiting" | "done";
-
-const priorityOrder: Record<Priority, number> = { critical: 0, warning: 1, waiting: 2, good: 3, done: 4 };
-
-function minutesSince(value: string | null) {
-  if (!value) return null;
-  return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000));
-}
-
-function boardPriority(board: LiveBoard): { level: Priority; label: string; detail: string } {
-  if (board.status === "COMPLETED") return { level: "done", label: "Fertig", detail: "Training abgeschlossen" };
-  if (board.status === "PAUSED") return { level: "warning", label: "Pausiert", detail: "Trainer prüfen" };
-  if (board.status === "NOT_STARTED") return { level: "waiting", label: "Wartet", detail: "Noch nicht gestartet" };
-  const idle = minutesSince(board.lastResultAt ?? board.startedAt) ?? 0;
-  if (idle >= 8) return { level: "critical", label: "Eingreifen", detail: `${idle} Min. ohne Eingabe` };
-  if (idle >= 4) return { level: "warning", label: "Beobachten", detail: `${idle} Min. ohne Eingabe` };
-  return { level: "good", label: "Läuft", detail: board.lastResultAt ? `vor ${idle} Min. aktiv` : "gerade gestartet" };
-}
+import { getBoardCoachHealth, sortBoardsByCoachPriority } from "@/lib/live-training/health";
+import type { LiveBoardSnapshot, LiveTrainingSnapshot } from "@/lib/live-training/types";
 
 export default function LiveCoachPage() {
   const { notify } = useAppFeedback();
-  const [training, setTraining] = useState<LiveTraining | null>(null);
+  const [training, setTraining] = useState<LiveTrainingSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<number | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [clock, setClock] = useState(new Date());
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -72,21 +36,27 @@ export default function LiveCoachPage() {
     return () => window.clearInterval(timer);
   }, [load, busy]);
 
-  const rankedBoards = useMemo(() => (training?.boards ?? [])
-    .map((board) => ({ board, priority: boardPriority(board) }))
-    .sort((a, b) => priorityOrder[a.priority.level] - priorityOrder[b.priority.level] || a.board.progressPercent - b.board.progressPercent), [training, lastUpdated]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const rankedBoards = useMemo(
+    () => sortBoardsByCoachPriority(training?.boards ?? [], clock),
+    [training, clock],
+  );
 
   const summary = useMemo(() => {
     const boards = training?.boards ?? [];
     return {
       active: boards.filter((board) => board.status === "RUNNING").length,
-      attention: boards.filter((board) => ["critical", "warning"].includes(boardPriority(board).level)).length,
+      attention: boards.filter((board) => ["critical", "warning"].includes(getBoardCoachHealth(board, clock).level)).length,
       completed: boards.filter((board) => board.status === "COMPLETED").length,
       progress: boards.length ? Math.round(boards.reduce((sum, board) => sum + board.progressPercent, 0) / boards.length) : 0,
     };
-  }, [training, lastUpdated]);
+  }, [training, clock]);
 
-  async function runAction(board: LiveBoard, action: "pause" | "resume" | "finish_exercise") {
+  async function runAction(board: LiveBoardSnapshot, action: "pause" | "resume" | "finish_exercise") {
     setBusy(board.id);
     try {
       const response = await fetch("/api/trainer/live/control", {
@@ -123,14 +93,14 @@ export default function LiveCoachPage() {
       </section>
 
       <section className="phase6-coach-board-list">
-        {rankedBoards.map(({ board, priority }, index) => (
-          <article className={`phase6-coach-board is-${priority.level}`} key={board.id}>
+        {rankedBoards.map(({ board, health }, index) => (
+          <article className={`phase6-coach-board is-${health.level}`} key={board.id}>
             <div className="phase6-coach-rank"><span>{String(index + 1).padStart(2, "0")}</span><i /></div>
             <div className="phase6-coach-board-main">
-              <header><div><small>{board.board.name}</small><h2>{board.currentExercise?.name ?? priority.label}</h2></div><span>{priority.label}</span></header>
+              <header><div><small>{board.board.name}</small><h2>{board.currentExercise?.name ?? health.label}</h2></div><span>{health.label}</span></header>
               <div className="phase6-coach-player"><strong>{board.currentPlayer?.displayName ?? board.players[0]?.displayName ?? "Kein Spieler"}</strong><small>{board.players.map((player) => player.displayName).join(" · ") || "Board frei"}</small></div>
               <div className="phase6-coach-progress"><i><b style={{ width: `${board.progressPercent}%` }} /></i><strong>{board.progressPercent}%</strong></div>
-              <footer><span>{priority.detail}</span><span>{board.resultCount} Ergebnisse</span></footer>
+              <footer><span>{health.detail}</span><span>{board.resultCount} Ergebnisse</span></footer>
             </div>
             <div className="phase6-coach-actions">
               {board.status === "RUNNING" && <button disabled={busy === board.id} onClick={() => void runAction(board, "pause")}>Pause</button>}
