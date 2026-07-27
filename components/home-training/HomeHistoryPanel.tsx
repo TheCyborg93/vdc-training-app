@@ -1,26 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-type SessionItem = {
-  id: number;
-  title: string;
-  goal: string;
-  plannedMinutes: number;
-  actualMinutes: number;
-  startedAt: string;
-  completedAt: string | null;
-  resultCount: number;
-  exerciseCount: number;
-  strongest: { exercise: string; score: number | null; resultType: string } | null;
-};
-
-type BestResult = { exercise: string; score: number; resultType: string; createdAt: string };
-type HistoryData = {
-  summary: { sessions: number; minutes: number; results: number; averageMinutes: number };
-  sessions: SessionItem[];
-  bestResults: BestResult[];
-};
+import { useState } from "react";
+import { useHomeInsights } from "./HomeInsightsProvider";
 
 function formatDate(value: string | null) {
   if (!value) return "–";
@@ -28,53 +9,9 @@ function formatDate(value: string | null) {
 }
 
 export default function HomeHistoryPanel() {
-  const [playerId, setPlayerId] = useState<number | null>(null);
-  const [data, setData] = useState<HistoryData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { playerId, data: insights, loading, error } = useHomeInsights();
+  const data = insights?.history ?? null;
   const [expanded, setExpanded] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let cleanup = () => {};
-    function connect() {
-      const select = document.querySelector<HTMLSelectElement>("#home-player");
-      if (!select) {
-        window.setTimeout(connect, 120);
-        return;
-      }
-      const sync = () => {
-        const value = Number(select.value);
-        if (!cancelled && Number.isInteger(value)) setPlayerId(value);
-      };
-      sync();
-      select.addEventListener("change", sync);
-      cleanup = () => select.removeEventListener("change", sync);
-    }
-    connect();
-    return () => { cancelled = true; cleanup(); };
-  }, []);
-
-  useEffect(() => {
-    if (!playerId) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    setExpanded(null);
-    fetch(`/api/home-training/history?playerId=${playerId}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "Historie konnte nicht geladen werden.");
-        setData(payload as HistoryData);
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "Historie konnte nicht geladen werden.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [playerId]);
 
   if (!playerId) return null;
 
