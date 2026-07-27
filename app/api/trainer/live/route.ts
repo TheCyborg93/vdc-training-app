@@ -46,12 +46,14 @@ export async function GET(request: Request) {
               orderBy: { position: "asc" },
               select: {
                 exerciseId: true,
-                exercise: {
-                  select: { id: true, name: true, description: true },
-                },
+                exercise: { select: { id: true, name: true, description: true } },
               },
             },
           },
+        },
+        players: {
+          orderBy: { player: { displayName: "asc" } },
+          select: { playerId: true, player: { select: { id: true, displayName: true } } },
         },
         assignments: {
           orderBy: [{ boardId: "asc" }, { position: "asc" }],
@@ -70,7 +72,7 @@ export async function GET(request: Request) {
             startedAt: true,
             completedAt: true,
             randomOrderJson: true,
-            board: { select: { id: true, name: true } },
+            board: { select: { id: true, name: true, location: true, available: true } },
             _count: { select: { results: true } },
             results: {
               where: { deletedAt: null },
@@ -122,6 +124,10 @@ export async function GET(request: Request) {
       };
     });
 
+    const assignedIds = new Set(trainingDay.assignments.map((assignment) => assignment.playerId));
+    const roster = trainingDay.players.map((entry) => entry.player);
+    const unassignedPlayers = roster.filter((player) => !assignedIds.has(player.id));
+
     return NextResponse.json(
       {
         id: trainingDay.id,
@@ -132,6 +138,8 @@ export async function GET(request: Request) {
           goal: trainingDay.trainingPlan.goal,
           durationMin: trainingDay.trainingPlan.durationMin,
         },
+        roster,
+        unassignedPlayers,
         boards,
       },
       { headers: { "Cache-Control": "no-store" } },
