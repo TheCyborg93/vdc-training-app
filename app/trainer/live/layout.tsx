@@ -1,3 +1,4 @@
+import Link from "next/link";
 import LiveAttendanceDock from "@/components/trainer/LiveAttendanceDock";
 import LiveGroupingDock from "@/components/trainer/LiveGroupingDock";
 import "../../vdc-phase6-live.css";
@@ -9,6 +10,7 @@ export default function TrainerLiveLayout({ children }: Readonly<{ children: Rea
   return (
     <>
       {children}
+      <Link className="phase6-coach-shortcut" href="/trainer/live/coach">Coach View</Link>
       <LiveGroupingDock />
       <LiveAttendanceDock />
     </>
