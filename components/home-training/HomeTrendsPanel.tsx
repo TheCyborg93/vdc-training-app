@@ -1,37 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
-type Summary = {
-  results: number;
-  activeDays: number;
-  average: number | null;
-  best: number | null;
-  checkoutRate: number | null;
-};
-
-type TrendWeek = {
-  key: string;
-  label: string;
-  results: number;
-  activeDays: number;
-  average: number | null;
-};
-
-type TrendData = {
-  current: Summary;
-  previous: Summary;
-  deltas: {
-    results: number;
-    activeDays: number;
-    average: number | null;
-    best: number | null;
-    checkoutRate: number | null;
-  };
-  bestImprovement: { exercise: string; currentAverage: number; previousAverage: number; delta: number } | null;
-  weeks: TrendWeek[];
-  period: { current: string; previous: string };
-};
+import { useMemo } from "react";
+import { useHomeInsights } from "./HomeInsightsProvider";
 
 function formatValue(value: number | null, suffix = "") {
   if (value === null) return "–";
@@ -46,56 +16,8 @@ function Delta({ value, suffix = "" }: { value: number | null; suffix?: string }
 }
 
 export default function HomeTrendsPanel() {
-  const [playerId, setPlayerId] = useState<number | null>(null);
-  const [data, setData] = useState<TrendData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    let cleanup = () => {};
-    function connect() {
-      const select = document.querySelector<HTMLSelectElement>("#home-player");
-      if (!select) {
-        window.setTimeout(connect, 120);
-        return;
-      }
-      const sync = () => {
-        const value = Number(select.value);
-        if (!cancelled && Number.isInteger(value)) setPlayerId(value);
-      };
-      sync();
-      select.addEventListener("change", sync);
-      cleanup = () => select.removeEventListener("change", sync);
-    }
-    connect();
-    return () => {
-      cancelled = true;
-      cleanup();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!playerId) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetch(`/api/home-training/trends?playerId=${playerId}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "Trends konnten nicht geladen werden.");
-        setData(payload as TrendData);
-      })
-      .catch((reason: unknown) => {
-        if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "Trends konnten nicht geladen werden.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [playerId]);
-
+  const { playerId, data: insights, loading, error } = useHomeInsights();
+  const data = insights?.trends ?? null;
   const maxResults = useMemo(() => Math.max(1, ...(data?.weeks.map((week) => week.results) ?? [1])), [data]);
 
   if (!playerId) return null;
