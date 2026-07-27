@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -118,7 +119,7 @@ export async function POST(request: Request) {
         title: `${source.title} (Kopie)`,
         goal: source.goal,
         durationMin: source.durationMin,
-        planJson: source.planJson,
+        planJson: source.planJson === null ? Prisma.JsonNull : source.planJson as Prisma.InputJsonValue,
       },
     });
 
