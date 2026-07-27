@@ -1,189 +1,57 @@
-import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
-import { prisma } from "@/lib/prisma";
-import { createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
-
-type ProgressState = {
-  order: number[];
-  exerciseIndex: number;
-  playerIndex: number;
-  roundNumber: number;
-  playerStates: Record<string, PlayerExerciseState>;
-};
-
-function readProgress(value: unknown): ProgressState | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const data = value as Record<string, unknown>;
-  const order = Array.isArray(data.order) ? data.order.map(Number).filter(Number.isInteger) : [];
-  const exerciseIndex = Number(data.exerciseIndex);
-  const playerIndex = Number(data.playerIndex);
-  const roundNumber = Number(data.roundNumber);
-  const playerStates = data.playerStates && typeof data.playerStates === "object" && !Array.isArray(data.playerStates)
-    ? data.playerStates as Record<string, PlayerExerciseState>
-    : {};
-  if (!order.length || !Number.isInteger(exerciseIndex) || !Number.isInteger(playerIndex) || !Number.isInteger(roundNumber)) return null;
-  return { order, exerciseIndex, playerIndex, roundNumber, playerStates };
-}
-
-function shuffle<T>(items: T[]): T[] {
-  const result = [...items];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [result[index], result[randomIndex]] = [result[randomIndex], result[index]];
-  }
-  return result;
-}
-
-function nextActiveIndex(progress: ProgressState): number {
-  for (let offset = 1; offset <= progress.order.length; offset += 1) {
-    const index = (progress.playerIndex + offset) % progress.order.length;
-    if (!progress.playerStates[String(progress.order[index])]?.completed) return index;
-  }
-  return progress.playerIndex;
-}
-
-async function completeBoardSession(session: { id: number; trainingDayId: number; randomOrderJson: unknown }) {
-  await prisma.$transaction(async (tx) => {
-    await tx.boardSession.update({
-      where: { id: session.id },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        currentExerciseId: null,
-        randomOrderJson: session.randomOrderJson as Prisma.InputJsonValue,
-      },
-    });
-
-    const openBoards = await tx.boardSession.count({
-      where: {
-        trainingDayId: session.trainingDayId,
-        id: { not: session.id },
-        status: { not: "COMPLETED" },
-      },
-    });
-
-    if (openBoards === 0) {
-      await tx.trainingDay.update({ where: { id: session.trainingDayId }, data: { status: "COMPLETED" } });
-    }
-  });
-}
+import { logger } from "@/lib/logger";
+import {
+  executeLiveBoardAction,
+  LiveTrainingControlError,
+} from "@/lib/services/live-training-control-service";
+import { liveBoardActionSchema } from "@/lib/validators/live-training-control";
 
 export async function POST(request: Request) {
+  const trainer = await getAuthenticatedTrainer();
+  if (!trainer) {
+    return NextResponse.json(
+      { error: "Keine Berechtigung für diese Traineraktion." },
+      { status: 403 },
+    );
+  }
+
   try {
-    const trainer = await getAuthenticatedTrainer();
-    if (!trainer) return NextResponse.json({ error: "Keine Berechtigung für diese Traineraktion." }, { status: 403 });
-
     const body = await request.json();
-    const boardSessionId = Number(body.boardSessionId);
-    const action = String(body.action ?? "");
-    if (!Number.isInteger(boardSessionId)) return NextResponse.json({ error: "Board-Sitzung ist erforderlich." }, { status: 400 });
+    const parsed = liveBoardActionSchema.safeParse(body);
 
-    const session = await prisma.boardSession.findUnique({
-      where: { id: boardSessionId },
-      include: {
-        trainingDay: {
-          include: {
-            trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } },
-          },
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Ungültige Traineraktion.",
+          details: parsed.error.flatten().fieldErrors,
         },
-      },
+        { status: 400 },
+      );
+    }
+
+    const result = await executeLiveBoardAction(parsed.data);
+    logger.info("Live board action completed", {
+      trainerId: trainer.id,
+      boardSessionId: parsed.data.boardSessionId,
+      action: parsed.data.action,
     });
-    if (!session) return NextResponse.json({ error: "Board-Sitzung wurde nicht gefunden." }, { status: 404 });
 
-    const assignments = await prisma.boardAssignment.findMany({
-      where: { trainingDayId: session.trainingDayId, boardId: session.boardId },
-      orderBy: { position: "asc" },
-    });
-    const validPlayerIds: number[] = assignments.map((item) => item.playerId);
-    const progress = readProgress(session.randomOrderJson);
-
-    if (action === "pause") {
-      if (session.status !== "RUNNING") return NextResponse.json({ error: "Nur ein laufendes Board kann pausiert werden." }, { status: 409 });
-      const updated = await prisma.boardSession.update({ where: { id: session.id }, data: { status: "PAUSED" } });
-      return NextResponse.json({ session: updated, message: "Board pausiert." });
-    }
-
-    if (action === "resume") {
-      if (session.status !== "PAUSED") return NextResponse.json({ error: "Dieses Board ist nicht pausiert." }, { status: 409 });
-      const updated = await prisma.$transaction(async (tx) => {
-        const board = await tx.boardSession.update({ where: { id: session.id }, data: { status: "RUNNING" } });
-        if (session.trainingDay.status !== "RUNNING") await tx.trainingDay.update({ where: { id: session.trainingDayId }, data: { status: "RUNNING" } });
-        return board;
-      });
-      return NextResponse.json({ session: updated, message: "Board fortgesetzt." });
-    }
-
-    if (action === "finish_board") {
-      if (session.status === "COMPLETED") return NextResponse.json({ error: "Dieses Board-Training ist bereits abgeschlossen." }, { status: 409 });
-      if (session.status === "NOT_STARTED") return NextResponse.json({ error: "Ein noch nicht gestartetes Board kann nicht abgeschlossen werden." }, { status: 409 });
-      await completeBoardSession(session);
-      return NextResponse.json({ completed: true, message: "Board-Training vollständig beendet." });
-    }
-
-    if (!progress) return NextResponse.json({ error: "Das Board wurde noch nicht gestartet oder der Fortschritt ist ungültig." }, { status: 409 });
-
-    const controllable = session.status === "RUNNING" || session.status === "PAUSED";
-    if (!controllable && action !== "reorder") return NextResponse.json({ error: "Das Board muss für diese Aktion laufen oder pausiert sein." }, { status: 409 });
-
-    if (action === "skip") {
-      if (session.status !== "RUNNING") return NextResponse.json({ error: "Spieler können nur bei laufendem Training gewechselt werden." }, { status: 409 });
-      const nextIndex = nextActiveIndex(progress);
-      const updatedProgress = { ...progress, playerIndex: nextIndex };
-      await prisma.boardSession.update({ where: { id: session.id }, data: { randomOrderJson: updatedProgress as Prisma.InputJsonValue } });
-      return NextResponse.json({ progress: updatedProgress, nextPlayerId: updatedProgress.order[nextIndex], message: "Zum nächsten Spieler gewechselt." });
-    }
-
-    if (action === "reorder") {
-      const requested: number[] = Array.isArray(body.order)
-        ? body.order.map((value: unknown) => Number(value)).filter((value: number) => Number.isInteger(value))
-        : [];
-      if (requested.length !== validPlayerIds.length || new Set(requested).size !== requested.length || requested.some((id: number) => !validPlayerIds.includes(id))) {
-        return NextResponse.json({ error: "Die neue Reihenfolge muss alle Spieler des Boards genau einmal enthalten." }, { status: 400 });
-      }
-      const currentPlayerId = progress.order[progress.playerIndex];
-      const currentIndex = Math.max(0, requested.indexOf(currentPlayerId));
-      const updatedProgress = { ...progress, order: requested, playerIndex: currentIndex };
-      await prisma.boardSession.update({ where: { id: session.id }, data: { randomOrderJson: updatedProgress as Prisma.InputJsonValue } });
-      return NextResponse.json({ progress: updatedProgress, message: "Reihenfolge aktualisiert." });
-    }
-
-    if (action === "finish_exercise") {
-      const exercises = session.trainingDay.trainingPlan.exercises;
-      const nextExerciseIndex = progress.exerciseIndex + 1;
-      const completed = nextExerciseIndex >= exercises.length;
-
-      if (completed) {
-        await completeBoardSession(session);
-        return NextResponse.json({ completed: true, message: "Letzte Übung und Board-Training abgeschlossen." });
-      }
-
-      const order = shuffle(validPlayerIds);
-      const exercise = exercises[nextExerciseIndex].exercise;
-      const playerStates = Object.fromEntries(order.map((playerId: number) => [String(playerId), createInitialExerciseState(exercise)]));
-      const nextProgress: ProgressState = {
-        order,
-        exerciseIndex: nextExerciseIndex,
-        playerIndex: 0,
-        roundNumber: progress.roundNumber + 1,
-        playerStates,
-      };
-
-      await prisma.boardSession.update({
-        where: { id: session.id },
-        data: {
-          status: session.status,
-          currentExerciseId: exercise.id,
-          randomOrderJson: nextProgress as Prisma.InputJsonValue,
-        },
-      });
-
-      return NextResponse.json({ completed: false, message: "Übung abgeschlossen. Die nächste Übung ist vorbereitet." });
-    }
-
-    return NextResponse.json({ error: "Unbekannte Traineraktion." }, { status: 400 });
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("Trainer live control failed", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Traineraktion konnte nicht ausgeführt werden." }, { status: 500 });
+    if (error instanceof LiveTrainingControlError) {
+      logger.warn("Live board action rejected", {
+        trainerId: trainer.id,
+        status: error.status,
+        reason: error.message,
+      });
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+
+    logger.error("Live board action failed", error, { trainerId: trainer.id });
+    return NextResponse.json(
+      { error: "Traineraktion konnte nicht ausgeführt werden." },
+      { status: 500 },
+    );
   }
 }
