@@ -21,6 +21,8 @@ type LibraryRow = {
   averageScore: number | null;
 };
 
+type MetaRow = { favorite: boolean; archived: boolean; folder: string | null };
+
 function exerciseCount(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
 }
@@ -143,12 +145,17 @@ export async function PATCH(request: Request) {
     const plan = await prisma.homeTrainingPlan.findFirst({ where: { id: planId, playerId } });
     if (!plan) return NextResponse.json({ error: "Plan wurde nicht gefunden." }, { status: 404 });
 
+    const [current] = await prisma.$queryRaw<MetaRow[]>`
+      SELECT "favorite", "archived", "folder" FROM "HomePlanLibraryMeta" WHERE "planId" = ${planId}
+    `;
+    const favorite = typeof body.favorite === "boolean" ? body.favorite : current?.favorite ?? false;
+    const archived = typeof body.archived === "boolean" ? body.archived : current?.archived ?? false;
+    const folder = Object.prototype.hasOwnProperty.call(body, "folder")
+      ? typeof body.folder === "string" && body.folder.trim() ? body.folder.trim() : null
+      : current?.folder ?? null;
+
     const title = typeof body.title === "string" ? body.title.trim() : null;
     if (title) await prisma.homeTrainingPlan.update({ where: { id: planId }, data: { title } });
-
-    const favorite = typeof body.favorite === "boolean" ? body.favorite : false;
-    const archived = typeof body.archived === "boolean" ? body.archived : false;
-    const folder = typeof body.folder === "string" && body.folder.trim() ? body.folder.trim() : null;
 
     await prisma.$executeRaw`
       INSERT INTO "HomePlanLibraryMeta" ("planId", "favorite", "archived", "folder", "updatedAt")
