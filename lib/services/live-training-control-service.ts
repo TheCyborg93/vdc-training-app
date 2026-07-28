@@ -1,4 +1,6 @@
 import { createInitialExerciseState, type PlayerExerciseState } from "@/lib/exercise-session-engine";
+import { eventBus } from "@/lib/events/event-bus";
+import { registerCoreEventListeners } from "@/lib/events/register-core-listeners";
 import {
   advanceBoardExercise,
   completeBoardSession,
@@ -23,6 +25,11 @@ type ProgressState = {
   playerIndex: number;
   roundNumber: number;
   playerStates: Record<string, PlayerExerciseState>;
+};
+
+type ActionContext = {
+  actorId?: number;
+  correlationId?: string;
 };
 
 function readProgress(value: unknown): ProgressState | null {
@@ -66,23 +73,47 @@ function assertExactOrder(requested: number[], validPlayerIds: number[]) {
   }
 }
 
-export async function executeLiveBoardAction(input: LiveBoardActionInput) {
+function metadata(context: ActionContext) {
+  return {
+    source: "live-training-control-service",
+    actorId: context.actorId,
+    correlationId: context.correlationId,
+  };
+}
+
+export async function executeLiveBoardAction(
+  input: LiveBoardActionInput,
+  context: ActionContext = {},
+) {
+  registerCoreEventListeners();
+
   const session = await findBoardSessionForControl(input.boardSessionId);
   if (!session) throw new LiveTrainingControlError("Board-Sitzung wurde nicht gefunden.", 404);
 
   const assignments = await findBoardAssignments(session.trainingDayId, session.boardId);
   const validPlayerIds = assignments.map((item) => item.playerId);
   const progress = readProgress(session.randomOrderJson);
+  const eventMetadata = metadata(context);
 
   if (input.action === "pause") {
     if (session.status !== "RUNNING") throw new LiveTrainingControlError("Nur ein laufendes Board kann pausiert werden.", 409);
     const updated = await updateBoardStatus(session.id, "PAUSED");
+    await eventBus.publish({
+      name: "board.paused",
+      payload: { trainingDayId: session.trainingDayId, boardSessionId: session.id, boardId: session.boardId },
+      metadata: eventMetadata,
+    });
     return { session: updated, message: "Board pausiert." };
   }
 
   if (input.action === "resume") {
     if (session.status !== "PAUSED") throw new LiveTrainingControlError("Dieses Board ist nicht pausiert.", 409);
     const updated = await resumeBoardAndTraining(session.id, session.trainingDayId, session.trainingDay.status);
+    await eventBus.publish({
+      name: "board.resumed",
+      payload: { trainingDayId: session.trainingDayId, boardSessionId: session.id, boardId: session.boardId },
+      metadata: eventMetadata,
+    });
     return { session: updated, message: "Board fortgesetzt." };
   }
 
@@ -94,6 +125,23 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
       trainingDayId: session.trainingDayId,
       progress: session.randomOrderJson,
     });
+    await eventBus.publish({
+      name: "board.finished",
+      payload: {
+        trainingDayId: session.trainingDayId,
+        boardSessionId: session.id,
+        boardId: session.boardId,
+        trainingCompleted: result.trainingCompleted,
+      },
+      metadata: eventMetadata,
+    });
+    if (result.trainingCompleted) {
+      await eventBus.publish({
+        name: "training.finished",
+        payload: { trainingDayId: session.trainingDayId, completedByBoardSessionId: session.id },
+        metadata: eventMetadata,
+      });
+    }
     return { completed: true, trainingCompleted: result.trainingCompleted, message: "Board-Training vollständig beendet." };
   }
 
@@ -111,11 +159,18 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
     const nextIndex = nextActiveIndex(progress);
     const updatedProgress = { ...progress, playerIndex: nextIndex };
     await updateBoardProgress(session.id, updatedProgress);
-    return {
-      progress: updatedProgress,
-      nextPlayerId: updatedProgress.order[nextIndex],
-      message: "Zum nächsten Spieler gewechselt.",
-    };
+    const nextPlayerId = updatedProgress.order[nextIndex];
+    await eventBus.publish({
+      name: "board.player.changed",
+      payload: {
+        trainingDayId: session.trainingDayId,
+        boardSessionId: session.id,
+        boardId: session.boardId,
+        playerId: nextPlayerId,
+      },
+      metadata: eventMetadata,
+    });
+    return { progress: updatedProgress, nextPlayerId, message: "Zum nächsten Spieler gewechselt." };
   }
 
   if (input.action === "reorder") {
@@ -124,12 +179,34 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
     const currentIndex = Math.max(0, input.order.indexOf(currentPlayerId));
     const updatedProgress = { ...progress, order: input.order, playerIndex: currentIndex };
     await updateBoardProgress(session.id, updatedProgress);
+    await eventBus.publish({
+      name: "board.order.changed",
+      payload: {
+        trainingDayId: session.trainingDayId,
+        boardSessionId: session.id,
+        boardId: session.boardId,
+        order: input.order,
+      },
+      metadata: eventMetadata,
+    });
     return { progress: updatedProgress, message: "Reihenfolge aktualisiert." };
   }
 
   const exercises = session.trainingDay.trainingPlan.exercises;
-  const nextExerciseIndex = progress.exerciseIndex + 1;
+  const completedExerciseIndex = progress.exerciseIndex;
+  const nextExerciseIndex = completedExerciseIndex + 1;
   const completed = nextExerciseIndex >= exercises.length;
+
+  await eventBus.publish({
+    name: "exercise.finished",
+    payload: {
+      trainingDayId: session.trainingDayId,
+      boardSessionId: session.id,
+      boardId: session.boardId,
+      exerciseIndex: completedExerciseIndex,
+    },
+    metadata: eventMetadata,
+  });
 
   if (completed) {
     const result = await completeBoardSession({
@@ -137,6 +214,23 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
       trainingDayId: session.trainingDayId,
       progress: session.randomOrderJson,
     });
+    await eventBus.publish({
+      name: "board.finished",
+      payload: {
+        trainingDayId: session.trainingDayId,
+        boardSessionId: session.id,
+        boardId: session.boardId,
+        trainingCompleted: result.trainingCompleted,
+      },
+      metadata: eventMetadata,
+    });
+    if (result.trainingCompleted) {
+      await eventBus.publish({
+        name: "training.finished",
+        payload: { trainingDayId: session.trainingDayId, completedByBoardSessionId: session.id },
+        metadata: eventMetadata,
+      });
+    }
     return {
       completed: true,
       trainingCompleted: result.trainingCompleted,
@@ -159,5 +253,16 @@ export async function executeLiveBoardAction(input: LiveBoardActionInput) {
 
   const activeStatus = session.status === "PAUSED" ? "PAUSED" : "RUNNING";
   await advanceBoardExercise(session.id, activeStatus, exercise.id, nextProgress);
+  await eventBus.publish({
+    name: "exercise.changed",
+    payload: {
+      trainingDayId: session.trainingDayId,
+      boardSessionId: session.id,
+      boardId: session.boardId,
+      exerciseId: exercise.id,
+      exerciseIndex: nextExerciseIndex,
+    },
+    metadata: eventMetadata,
+  });
   return { completed: false, message: "Übung abgeschlossen. Die nächste Übung ist vorbereitet." };
 }
