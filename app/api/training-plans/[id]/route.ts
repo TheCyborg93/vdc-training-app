@@ -1,69 +1,62 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
+import { logger } from "@/lib/logger";
+import {
+  removeTrainingPlanDraft,
+  TrainingPlanServiceError,
+  updateTrainingPlanDraft,
+} from "@/lib/services/training-plan-service";
+import { trainingPlanIdSchema, trainingPlanInputSchema } from "@/lib/validators/training-plan";
 
-function normalizeItems(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return value.map((item, index) => {
-    const entry = item as { exerciseId?: unknown; durationMin?: unknown };
-    return {
-      exerciseId: Number(entry.exerciseId),
-      durationMin: Number(entry.durationMin),
-      position: index + 1,
-    };
-  });
+type RouteContext = { params: Promise<{ id: string }> };
+
+async function parsePlanId(context: RouteContext) {
+  const { id } = await context.params;
+  return trainingPlanIdSchema.safeParse(id);
 }
 
-export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+export async function PUT(request: Request, context: RouteContext) {
+  const trainer = await getAuthenticatedTrainer();
+  if (!trainer) return NextResponse.json({ error: "Keine Berechtigung für Trainingspläne." }, { status: 403 });
+
   try {
-    const { id } = await context.params;
-    const planId = Number(id);
-    const body = await request.json();
-    const title = String(body.title ?? "").trim();
-    const goal = String(body.goal ?? "").trim();
-    const durationMin = Number(body.durationMin);
-    const items = normalizeItems(body.items);
-
-    if (!Number.isInteger(planId) || !title || !goal || !Number.isInteger(durationMin) || durationMin < 10 || items.length === 0) {
-      return NextResponse.json({ error: "Titel, Ziel, Dauer und mindestens eine Übung sind erforderlich." }, { status: 400 });
-    }
-    if (items.some((item) => !Number.isInteger(item.exerciseId) || !Number.isInteger(item.durationMin) || item.durationMin < 1)) {
-      return NextResponse.json({ error: "Eine Übung enthält ungültige Werte." }, { status: 400 });
+    const [idResult, body] = await Promise.all([parsePlanId(context), request.json()]);
+    const inputResult = trainingPlanInputSchema.safeParse(body);
+    if (!idResult.success || !inputResult.success) {
+      return NextResponse.json(
+        { error: "Titel, Ziel, Dauer und mindestens eine gültige Übung sind erforderlich.", details: inputResult.success ? undefined : inputResult.error.flatten().fieldErrors },
+        { status: 400 },
+      );
     }
 
-    const existing = await prisma.trainingPlan.findUnique({ where: { id: planId }, select: { status: true } });
-    if (!existing) return NextResponse.json({ error: "Trainingsplan wurde nicht gefunden." }, { status: 404 });
-    if (existing.status !== "DRAFT") return NextResponse.json({ error: "Nur unveröffentlichte Entwürfe können bearbeitet werden." }, { status: 409 });
-
-    const plan = await prisma.$transaction(async (tx) => {
-      await tx.trainingPlanExercise.deleteMany({ where: { trainingPlanId: planId } });
-      return tx.trainingPlan.update({
-        where: { id: planId },
-        data: { title, goal, durationMin, exercises: { create: items } },
-        include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } },
-      });
-    });
-
+    const plan = await updateTrainingPlanDraft(idResult.data, inputResult.data);
+    logger.info("Training plan draft updated", { trainerId: trainer.id, trainingPlanId: plan.id });
     return NextResponse.json(plan);
   } catch (error) {
-    console.error("Training plan PUT failed", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Trainingsplan konnte nicht aktualisiert werden." }, { status: 500 });
+    if (error instanceof TrainingPlanServiceError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logger.error("Training plan update failed", error, { trainerId: trainer.id });
+    return NextResponse.json({ error: "Trainingsplan konnte nicht aktualisiert werden." }, { status: 500 });
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(_request: Request, context: RouteContext) {
+  const trainer = await getAuthenticatedTrainer();
+  if (!trainer) return NextResponse.json({ error: "Keine Berechtigung für Trainingspläne." }, { status: 403 });
+
   try {
-    const { id } = await context.params;
-    const planId = Number(id);
-    if (!Number.isInteger(planId)) return NextResponse.json({ error: "Ungültiger Trainingsplan." }, { status: 400 });
+    const idResult = await parsePlanId(context);
+    if (!idResult.success) return NextResponse.json({ error: "Ungültiger Trainingsplan." }, { status: 400 });
 
-    const existing = await prisma.trainingPlan.findUnique({ where: { id: planId }, select: { status: true } });
-    if (!existing) return NextResponse.json({ error: "Trainingsplan wurde nicht gefunden." }, { status: 404 });
-    if (existing.status !== "DRAFT") return NextResponse.json({ error: "Nur unveröffentlichte Entwürfe können gelöscht werden." }, { status: 409 });
-
-    await prisma.trainingPlan.delete({ where: { id: planId } });
-    return NextResponse.json({ deleted: true });
+    const result = await removeTrainingPlanDraft(idResult.data);
+    logger.info("Training plan draft deleted", { trainerId: trainer.id, trainingPlanId: idResult.data });
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("Training plan DELETE failed", error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Trainingsplan konnte nicht gelöscht werden." }, { status: 500 });
+    if (error instanceof TrainingPlanServiceError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    logger.error("Training plan deletion failed", error, { trainerId: trainer.id });
+    return NextResponse.json({ error: "Trainingsplan konnte nicht gelöscht werden." }, { status: 500 });
   }
 }
