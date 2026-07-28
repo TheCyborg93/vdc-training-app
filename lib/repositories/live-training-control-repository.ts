@@ -1,9 +1,11 @@
-import {
-  BoardSessionStatus,
-  Prisma,
-  TrainingDayStatus,
-} from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { BoardSessionStatus, TrainingDayStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+type ControllableBoardStatus = Extract<
+  BoardSessionStatus,
+  "RUNNING" | "PAUSED"
+>;
 
 export async function findBoardSessionForControl(boardSessionId: number) {
   return prisma.boardSession.findUnique({
@@ -35,7 +37,7 @@ export async function findBoardAssignments(trainingDayId: number, boardId: numbe
 
 export async function updateBoardStatus(
   boardSessionId: number,
-  status: BoardSessionStatus.RUNNING | BoardSessionStatus.PAUSED,
+  status: ControllableBoardStatus,
 ) {
   return prisma.boardSession.update({
     where: { id: boardSessionId },
@@ -51,12 +53,12 @@ export async function resumeBoardAndTraining(
   return prisma.$transaction(async (tx) => {
     const board = await tx.boardSession.update({
       where: { id: boardSessionId },
-      data: { status: BoardSessionStatus.RUNNING },
+      data: { status: "RUNNING" },
     });
-    if (trainingDayStatus !== TrainingDayStatus.RUNNING) {
+    if (trainingDayStatus !== "RUNNING") {
       await tx.trainingDay.update({
         where: { id: trainingDayId },
-        data: { status: TrainingDayStatus.RUNNING },
+        data: { status: "RUNNING" },
       });
     }
     return board;
@@ -95,7 +97,7 @@ export async function completeBoardSession(input: {
     await tx.boardSession.update({
       where: { id: input.boardSessionId },
       data: {
-        status: BoardSessionStatus.COMPLETED,
+        status: "COMPLETED",
         completedAt: new Date(),
         currentExerciseId: null,
         randomOrderJson: input.progress as Prisma.InputJsonValue,
@@ -106,14 +108,14 @@ export async function completeBoardSession(input: {
       where: {
         trainingDayId: input.trainingDayId,
         id: { not: input.boardSessionId },
-        status: { not: BoardSessionStatus.COMPLETED },
+        status: { not: "COMPLETED" },
       },
     });
 
     if (openBoards === 0) {
       await tx.trainingDay.update({
         where: { id: input.trainingDayId },
-        data: { status: TrainingDayStatus.COMPLETED },
+        data: { status: "COMPLETED" },
       });
     }
 
