@@ -22,7 +22,7 @@ export type ActivityProjectionInput = {
 export type NotificationProjectionInput = {
   eventId: string;
   projectionKey: string;
-  recipientUserId?: number;
+  recipientUserId: number;
   audience?: ProjectionAudience;
   tone?: ProjectionTone;
   title: string;
@@ -50,13 +50,21 @@ export async function createActivityProjection(input: ActivityProjectionInput) {
   `;
 }
 
+export async function findActiveNotificationRecipients(audience: "TRAINER" | "ADMIN" | "ALL") {
+  const roles = audience === "ALL" ? ["TRAINER", "ADMIN"] : [audience];
+  return prisma.user.findMany({
+    where: { active: true, role: { in: roles } },
+    select: { id: true },
+  });
+}
+
 export async function createNotificationProjection(input: NotificationProjectionInput) {
   await prisma.$executeRaw`
     INSERT INTO "AppNotification" (
       "eventId", "projectionKey", "recipientUserId", "audience", "tone",
       "title", "message", "actionUrl"
     ) VALUES (
-      ${input.eventId}, ${input.projectionKey}, ${input.recipientUserId ?? null},
+      ${input.eventId}, ${input.projectionKey}, ${input.recipientUserId},
       CAST(${input.audience ?? "TRAINER"} AS "ActivityAudience"),
       CAST(${input.tone ?? "INFO"} AS "ActivityTone"),
       ${input.title}, ${input.message}, ${input.actionUrl ?? null}
@@ -117,7 +125,7 @@ export async function findNotifications(input: {
   return prisma.$queryRaw<NotificationRow[]>`
     SELECT "id", "audience", "tone", "title", "message", "actionUrl", "readAt", "createdAt"
     FROM "AppNotification"
-    WHERE ("recipientUserId" = ${input.userId} OR "recipientUserId" IS NULL)
+    WHERE "recipientUserId" = ${input.userId}
       AND "audience"::TEXT IN (${input.role}, 'ALL')
     ORDER BY "createdAt" DESC
     LIMIT ${limit}
@@ -129,6 +137,6 @@ export async function markNotificationRead(notificationId: number, userId: numbe
     UPDATE "AppNotification"
     SET "readAt" = CURRENT_TIMESTAMP
     WHERE "id" = ${notificationId}
-      AND ("recipientUserId" = ${userId} OR "recipientUserId" IS NULL)
+      AND "recipientUserId" = ${userId}
   `;
 }
