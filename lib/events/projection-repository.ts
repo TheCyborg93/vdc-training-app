@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type ProjectionAudience = "TRAINER" | "ADMIN" | "ALL";
@@ -50,8 +50,14 @@ export async function createActivityProjection(input: ActivityProjectionInput) {
   `;
 }
 
-export async function findActiveNotificationRecipients(audience: "TRAINER" | "ADMIN" | "ALL") {
-  const roles = audience === "ALL" ? ["TRAINER", "ADMIN"] : [audience];
+export async function findActiveNotificationRecipients(
+  audience: ProjectionAudience,
+) {
+  const roles: UserRole[] =
+    audience === "ALL"
+      ? [UserRole.TRAINER, UserRole.ADMIN]
+      : [audience === "ADMIN" ? UserRole.ADMIN : UserRole.TRAINER];
+
   return prisma.user.findMany({
     where: { active: true, role: { in: roles } },
     select: { id: true },
