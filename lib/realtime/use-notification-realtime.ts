@@ -6,7 +6,7 @@ import {
   TRAINER_NOTIFICATION_CHANNEL,
   TRAINER_NOTIFICATION_EVENT,
   type NotificationRealtimeMessage,
-} from "@/lib/realtime/notification-events";
+} from "@/lib/realtime/notification-types";
 
 export type NotificationRealtimeState = "idle" | "connecting" | "connected" | "fallback";
 
