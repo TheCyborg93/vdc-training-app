@@ -2,6 +2,7 @@ import type { DomainEvent, DomainEventName } from "@/lib/events/types";
 import {
   createActivityProjection,
   createNotificationProjection,
+  findActiveNotificationRecipients,
   type ProjectionTone,
 } from "@/lib/events/projection-repository";
 
@@ -99,22 +100,25 @@ export async function projectDomainEvent(event: DomainEvent<DomainEventName>) {
     tone: description.tone,
     title: description.title,
     message: description.message,
-    data: {
-      payload: event.payload,
-      metadata: event.metadata,
-    },
+    data: { payload: event.payload, metadata: event.metadata },
     occurredAt: event.occurredAt,
   });
 
   if (description.notify) {
-    await createNotificationProjection({
-      eventId: event.id,
-      projectionKey: "notification.default",
-      audience: "TRAINER",
-      tone: description.tone,
-      title: description.title,
-      message: description.message,
-      actionUrl: description.actionUrl,
-    });
+    const recipients = await findActiveNotificationRecipients("TRAINER");
+    await Promise.all(
+      recipients.map((recipient) =>
+        createNotificationProjection({
+          eventId: event.id,
+          projectionKey: "notification.default",
+          recipientUserId: recipient.id,
+          audience: "TRAINER",
+          tone: description.tone,
+          title: description.title,
+          message: description.message,
+          actionUrl: description.actionUrl,
+        }),
+      ),
+    );
   }
 }
