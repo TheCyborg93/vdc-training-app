@@ -1,4 +1,8 @@
-import { Prisma } from "@prisma/client";
+import {
+  BoardSessionStatus,
+  Prisma,
+  TrainingDayStatus,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function findBoardSessionForControl(boardSessionId: number) {
@@ -29,21 +33,31 @@ export async function findBoardAssignments(trainingDayId: number, boardId: numbe
   });
 }
 
-export async function updateBoardStatus(boardSessionId: number, status: "RUNNING" | "PAUSED") {
+export async function updateBoardStatus(
+  boardSessionId: number,
+  status: BoardSessionStatus.RUNNING | BoardSessionStatus.PAUSED,
+) {
   return prisma.boardSession.update({
     where: { id: boardSessionId },
     data: { status },
   });
 }
 
-export async function resumeBoardAndTraining(boardSessionId: number, trainingDayId: number, trainingDayStatus: string) {
+export async function resumeBoardAndTraining(
+  boardSessionId: number,
+  trainingDayId: number,
+  trainingDayStatus: TrainingDayStatus,
+) {
   return prisma.$transaction(async (tx) => {
     const board = await tx.boardSession.update({
       where: { id: boardSessionId },
-      data: { status: "RUNNING" },
+      data: { status: BoardSessionStatus.RUNNING },
     });
-    if (trainingDayStatus !== "RUNNING") {
-      await tx.trainingDay.update({ where: { id: trainingDayId }, data: { status: "RUNNING" } });
+    if (trainingDayStatus !== TrainingDayStatus.RUNNING) {
+      await tx.trainingDay.update({
+        where: { id: trainingDayId },
+        data: { status: TrainingDayStatus.RUNNING },
+      });
     }
     return board;
   });
@@ -58,7 +72,7 @@ export async function updateBoardProgress(boardSessionId: number, progress: unkn
 
 export async function advanceBoardExercise(
   boardSessionId: number,
-  status: string,
+  status: BoardSessionStatus,
   exerciseId: number,
   progress: unknown,
 ) {
@@ -81,7 +95,7 @@ export async function completeBoardSession(input: {
     await tx.boardSession.update({
       where: { id: input.boardSessionId },
       data: {
-        status: "COMPLETED",
+        status: BoardSessionStatus.COMPLETED,
         completedAt: new Date(),
         currentExerciseId: null,
         randomOrderJson: input.progress as Prisma.InputJsonValue,
@@ -92,14 +106,14 @@ export async function completeBoardSession(input: {
       where: {
         trainingDayId: input.trainingDayId,
         id: { not: input.boardSessionId },
-        status: { not: "COMPLETED" },
+        status: { not: BoardSessionStatus.COMPLETED },
       },
     });
 
     if (openBoards === 0) {
       await tx.trainingDay.update({
         where: { id: input.trainingDayId },
-        data: { status: "COMPLETED" },
+        data: { status: TrainingDayStatus.COMPLETED },
       });
     }
 
@@ -107,4 +121,6 @@ export async function completeBoardSession(input: {
   });
 }
 
-export type BoardSessionForControl = NonNullable<Awaited<ReturnType<typeof findBoardSessionForControl>>>;
+export type BoardSessionForControl = NonNullable<
+  Awaited<ReturnType<typeof findBoardSessionForControl>>
+>;
