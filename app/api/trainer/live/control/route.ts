@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     );
   }
 
+  const correlationId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
   try {
     const body = await request.json();
     const parsed = liveBoardActionSchema.safeParse(body);
@@ -30,28 +32,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await executeLiveBoardAction(parsed.data);
+    const result = await executeLiveBoardAction(parsed.data, {
+      actorId: trainer.id,
+      correlationId,
+    });
     logger.info("Live board action completed", {
       trainerId: trainer.id,
       boardSessionId: parsed.data.boardSessionId,
       action: parsed.data.action,
+      correlationId,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, { headers: { "x-request-id": correlationId } });
   } catch (error) {
     if (error instanceof LiveTrainingControlError) {
       logger.warn("Live board action rejected", {
         trainerId: trainer.id,
         status: error.status,
         reason: error.message,
+        correlationId,
       });
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status, headers: { "x-request-id": correlationId } },
+      );
     }
 
-    logger.error("Live board action failed", error, { trainerId: trainer.id });
+    logger.error("Live board action failed", error, { trainerId: trainer.id, correlationId });
     return NextResponse.json(
       { error: "Traineraktion konnte nicht ausgeführt werden." },
-      { status: 500 },
+      { status: 500, headers: { "x-request-id": correlationId } },
     );
   }
 }
