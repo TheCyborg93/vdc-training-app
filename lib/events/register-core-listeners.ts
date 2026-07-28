@@ -1,4 +1,5 @@
 import { eventBus } from "@/lib/events/event-bus";
+import { projectDomainEvent } from "@/lib/events/projection-listeners";
 import type { DomainEventName } from "@/lib/events/types";
 import { logger } from "@/lib/logger";
 
@@ -32,6 +33,10 @@ export function registerCoreEventListeners() {
         correlationId: event.metadata.correlationId,
         payload: event.payload,
       });
+    });
+
+    eventBus.subscribe(name, async (event) => {
+      await projectDomainEvent(event);
     });
   }
 
