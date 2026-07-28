@@ -1,15 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import type { DomainEvent, DomainEventName } from "@/lib/events/types";
 import { logger } from "@/lib/logger";
-
-export const TRAINER_NOTIFICATION_CHANNEL = "trainer-notifications";
-export const TRAINER_NOTIFICATION_EVENT = "notification-refresh";
-
-export type NotificationRealtimeMessage = {
-  eventId: string;
-  eventName: DomainEventName;
-  occurredAt: string;
-};
+import {
+  TRAINER_NOTIFICATION_CHANNEL,
+  TRAINER_NOTIFICATION_EVENT,
+  type NotificationRealtimeMessage,
+} from "@/lib/realtime/notification-types";
 
 export async function broadcastNotificationRefresh(event: DomainEvent<DomainEventName>) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
