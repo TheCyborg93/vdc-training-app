@@ -2,6 +2,7 @@ import { eventBus } from "@/lib/events/event-bus";
 import { projectDomainEvent } from "@/lib/events/projection-listeners";
 import type { DomainEventName } from "@/lib/events/types";
 import { logger } from "@/lib/logger";
+import { broadcastNotificationRefresh } from "@/lib/realtime/notification-events";
 import { broadcastTrainingEvent } from "@/lib/realtime/training-events";
 
 const eventNames: DomainEventName[] = [
@@ -38,6 +39,7 @@ export function registerCoreEventListeners() {
 
     eventBus.subscribe(name, async (event) => {
       await projectDomainEvent(event);
+      await broadcastNotificationRefresh(event);
     });
 
     eventBus.subscribe(name, async (event) => {
