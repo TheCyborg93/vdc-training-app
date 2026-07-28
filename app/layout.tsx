@@ -36,6 +36,7 @@ import "./vdc-phase5-player.css";
 import "./vdc-phase5-home.css";
 import "./vdc-phase5-activity.css";
 import "./vdc-notifications.css";
+import "./vdc-monitoring.css";
 
 export const metadata: Metadata = {
   title: "VDC Training OS",
