@@ -1,5 +1,9 @@
 import { processRetryableDomainEvents } from "@/lib/events/retry-service";
 import { registerBackgroundJobHandler } from "@/lib/jobs/job-queue";
+import {
+  handleAnalyticsRefreshJob,
+  handleTrainingReportJob,
+} from "@/lib/jobs/training-job-handlers";
 
 let registered = false;
 
@@ -10,6 +14,9 @@ export function registerCoreBackgroundJobHandlers() {
     const limit = Math.min(100, Math.max(1, job.payload.limit ?? 25));
     return processRetryableDomainEvents(limit);
   });
+
+  registerBackgroundJobHandler("ANALYTICS_REFRESH", handleAnalyticsRefreshJob);
+  registerBackgroundJobHandler("TRAINING_REPORT", handleTrainingReportJob);
 
   registered = true;
 }
