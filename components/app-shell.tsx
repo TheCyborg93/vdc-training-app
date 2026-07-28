@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import NotificationCenter from "@/components/notification-center";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type IconName = "dashboard" | "calendar" | "plans" | "home" | "exercises" | "players" | "boards" | "live" | "archive" | "stats" | "coach" | "system" | "login" | "switch";
@@ -86,7 +87,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     void fetch("/api/auth/me", { signal: controller.signal }).then((response) => response.json()).then((data: TrainerSession) => setSession(data)).catch(() => setSession({ authenticated: false, trainer: null }));
     return () => controller.abort();
-    // Die App-Shell bleibt beim Navigieren bestehen. Die Sitzung muss deshalb nur einmal geladen werden.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -105,7 +105,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     const idle = window.setTimeout(() => void checkHealth(), 1200);
     timer = window.setInterval(() => void checkHealth(), 300_000);
     return () => { disposed = true; window.clearTimeout(idle); if (timer) window.clearInterval(timer); };
-    // Der Health-Check darf beim Seitenwechsel nicht neu starten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -134,7 +133,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <div className="vdc-profile"><span className="vdc-avatar">{profileLabel.slice(0, 2).toUpperCase()}</span><div><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small><strong>{profileLabel}</strong></div>{session.authenticated && <button type="button" onClick={() => void logout()} aria-label="Abmelden">×</button>}</div>
       </div>
     </aside>
-    <section className="vdc-stage"><header className="vdc-topbar"><div className="vdc-page-context"><small>{trainerMode ? "Trainerbereich" : "Spielerbereich"} <span>/</span> {pageTitle}</small><strong>{pageTitle}</strong></div><div className="vdc-topbar-meta"><span className="vdc-date">{dateLabel}</span><span className={`vdc-health is-${health}`} title="Systemstatus"><i/>{health === "checking" ? "Prüfung" : health === "online" ? "Online" : "Offline"}</span><span className="vdc-top-profile"><b>{profileLabel}</b><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small></span></div></header><div className="vdc-content">{children}</div></section>
+    <section className="vdc-stage"><header className="vdc-topbar"><div className="vdc-page-context"><small>{trainerMode ? "Trainerbereich" : "Spielerbereich"} <span>/</span> {pageTitle}</small><strong>{pageTitle}</strong></div><div className="vdc-topbar-meta"><span className="vdc-date">{dateLabel}</span><span className={`vdc-health is-${health}`} title="Systemstatus"><i/>{health === "checking" ? "Prüfung" : health === "online" ? "Online" : "Offline"}</span><NotificationCenter enabled={trainerMode && session.authenticated}/><span className="vdc-top-profile"><b>{profileLabel}</b><small>{session.authenticated ? session.trainer?.role : trainerMode ? "Trainer" : "Spieler"}</small></span></div></header><div className="vdc-content">{children}</div></section>
     <nav className="vdc-mobile-nav" aria-label="Mobile Navigation">{groups.flatMap((group) => group.items).slice(0, 4).map((item) => { const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} className={active ? "is-active" : ""}><Icon name={item.icon}/><small>{item.label}</small></Link>; })}{trainerMode ? <Link href="/"><Icon name="switch"/><small>Spieler</small></Link> : session.authenticated ? <Link href="/trainer"><Icon name="switch"/><small>Trainer</small></Link> : <Link href="/login"><Icon name="login"/><small>Login</small></Link>}</nav>
   </div>;
 }
