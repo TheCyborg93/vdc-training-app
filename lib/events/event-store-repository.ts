@@ -5,7 +5,7 @@ import type { DomainEvent, DomainEventName } from "@/lib/events/types";
 const MAX_ATTEMPTS = 5;
 
 function json(value: unknown): Prisma.InputJsonValue {
-  return value as Prisma.InputJsonValue;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 export async function persistDomainEvent(event: DomainEvent) {
