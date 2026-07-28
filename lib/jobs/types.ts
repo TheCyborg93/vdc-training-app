@@ -15,7 +15,11 @@ export type BackgroundJobType =
 export type BackgroundJobPayloadMap = {
   EVENT_RETRY: { limit?: number };
   TRAINING_REPORT: { trainingDayId: number; format?: "PDF" | "JSON" };
-  DATA_EXPORT: { scope: "TRAINING" | "PLAYER" | "CLUB"; entityId?: number; format: "CSV" | "JSON" | "XLSX" };
+  DATA_EXPORT: {
+    scope: "TRAINING" | "PLAYER" | "CLUB";
+    entityId?: number;
+    format: "CSV" | "JSON" | "XLSX";
+  };
   ANALYTICS_REFRESH: { trainingDayId?: number; playerId?: number };
   BACKUP: { scope: "DATABASE" | "TRAINING_DATA" };
 };
@@ -28,6 +32,7 @@ export type EnqueueBackgroundJobInput<TType extends BackgroundJobType> = {
   runAt?: Date;
   createdById?: number;
   correlationId?: string;
+  dedupeKey?: string;
 };
 
 export type StoredBackgroundJob<TType extends BackgroundJobType = BackgroundJobType> = {
@@ -46,6 +51,7 @@ export type StoredBackgroundJob<TType extends BackgroundJobType = BackgroundJobT
   lastError: string | null;
   createdById: number | null;
   correlationId: string | null;
+  dedupeKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
