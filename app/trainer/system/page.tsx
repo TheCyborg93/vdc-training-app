@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
 
 export const dynamic = "force-dynamic";
 
 export default async function SystemPage() {
+  const trainer = await getAuthenticatedTrainer();
   const startedAt = Date.now();
   let databaseOnline = false;
   let databaseMessage = "Nicht erreichbar";
@@ -34,6 +37,11 @@ export default async function SystemPage() {
         <article className="system-card"><small>Datenbank</small><strong>{databaseOnline ? "Online" : "Offline"}</strong><p>{databaseMessage}</p></article>
       </section>
 
+      {trainer?.role === "ADMIN" && <section className="section-block">
+        <div className="section-heading"><div><span className="eyebrow">Production Control</span><h2>Monitoring & Health</h2></div><Link className="button" href="/trainer/monitoring">Monitoring öffnen</Link></div>
+        <div className="club-panel"><p>Prüft Datenbank, Event Store, Job Queue, Realtime-Konfiguration, Arbeitsspeicher und aktive Systemwarnungen.</p></div>
+      </section>}
+
       <section className="section-block">
         <div className="section-heading"><div><span className="eyebrow">Release</span><h2>Aktueller Build</h2></div></div>
         <div className="club-panel"><p><strong>Erstellt:</strong> {buildDate}</p><p><strong>Produkt:</strong> Vestischer Dart Club – Training OS</p><p><strong>Status:</strong> Version 1.0 Release Candidate</p></div>
@@ -42,7 +50,7 @@ export default async function SystemPage() {
       <section className="section-block">
         <div className="section-heading"><div><span className="eyebrow">Änderungsverlauf</span><h2>Changelog</h2></div></div>
         <div className="system-changelog">
-          <article><h3>1.0.0 RC</h3><p>Neues Designsystem, Trainerzentrale, Trainingsplan-Workflow, Competition Mode, Ergebnis-Engines, Archiv, Spielerstatistik und Abschlussberichte.</p></article>
+          <article><h3>1.0.0 RC</h3><p>Phase 6 abgeschlossen: Service Layer, Event Bus, Event Store, Realtime, Benachrichtigungen, Hintergrundjobs, Retry-/Dead-Letter-System und Produktionsmonitoring.</p></article>
           <article><h3>0.9.0</h3><p>Technische Stabilisierung von Authentifizierung, Datenbankanbindung, Trainingsabläufen und Heimtraining.</p></article>
         </div>
       </section>
