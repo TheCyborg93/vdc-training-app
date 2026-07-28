@@ -23,6 +23,7 @@ type JobRow = {
   lastError: string | null;
   createdById: number | null;
   correlationId: string | null;
+  dedupeKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -44,6 +45,7 @@ function mapRow(row: JobRow): StoredBackgroundJob {
     lastError: row.lastError,
     createdById: row.createdById,
     correlationId: row.correlationId,
+    dedupeKey: row.dedupeKey,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -55,16 +57,26 @@ export async function insertBackgroundJob<TType extends BackgroundJobType>(
 ) {
   const payloadJson = JSON.stringify(input.payload);
   const rows = await prisma.$queryRaw<JobRow[]>`
-    INSERT INTO "BackgroundJob" (
-      "id", "type", "payloadJson", "priority", "maxAttempts", "runAt",
-      "createdById", "correlationId", "updatedAt"
-    ) VALUES (
-      ${id}, ${input.type}, CAST(${payloadJson} AS JSONB), ${input.priority ?? 100},
-      ${input.maxAttempts ?? 5}, ${input.runAt ?? new Date()}, ${input.createdById ?? null},
-      ${input.correlationId ?? null}, CURRENT_TIMESTAMP
+    WITH inserted AS (
+      INSERT INTO "BackgroundJob" (
+        "id", "type", "payloadJson", "priority", "maxAttempts", "runAt",
+        "createdById", "correlationId", "dedupeKey", "updatedAt"
+      ) VALUES (
+        ${id}, ${input.type}, CAST(${payloadJson} AS JSONB), ${input.priority ?? 100},
+        ${input.maxAttempts ?? 5}, ${input.runAt ?? new Date()}, ${input.createdById ?? null},
+        ${input.correlationId ?? null}, ${input.dedupeKey ?? null}, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT ("dedupeKey") WHERE "dedupeKey" IS NOT NULL DO NOTHING
+      RETURNING *
     )
-    RETURNING *
+    SELECT * FROM inserted
+    UNION ALL
+    SELECT * FROM "BackgroundJob"
+    WHERE ${input.dedupeKey ?? null}::TEXT IS NOT NULL
+      AND "dedupeKey" = ${input.dedupeKey ?? null}
+    LIMIT 1
   `;
+  if (!rows[0]) throw new Error("Hintergrundjob konnte nicht angelegt werden.");
   return mapRow(rows[0]);
 }
 
