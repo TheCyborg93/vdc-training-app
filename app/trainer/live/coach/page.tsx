@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppFeedback } from "@/components/ui/app-feedback";
 import { getBoardCoachHealth, sortBoardsByCoachPriority } from "@/lib/live-training/health";
 import type { LiveBoardSnapshot, LiveTrainingSnapshot } from "@/lib/live-training/types";
+import { useTrainingRealtime } from "@/lib/realtime/use-training-realtime";
 
 export default function LiveCoachPage() {
   const { notify } = useAppFeedback();
@@ -28,13 +29,20 @@ export default function LiveCoachPage() {
     }
   }, [notify]);
 
+  const handleRealtimeMessage = useCallback(async () => {
+    if (document.visibilityState === "visible" && busy === null) await load(true);
+  }, [busy, load]);
+
+  const realtimeState = useTrainingRealtime(training?.id ?? null, handleRealtimeMessage);
+
   useEffect(() => {
     void load();
+    const intervalMs = realtimeState === "connected" ? 30_000 : 5_000;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible" && busy === null) void load(true);
-    }, 2000);
+    }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [load, busy]);
+  }, [load, busy, realtimeState]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 30_000);
@@ -78,11 +86,13 @@ export default function LiveCoachPage() {
   if (loading) return <main className="phase6-coach-view"><div className="phase6-coach-loading"><i /><i /><i /></div></main>;
   if (!training) return <main className="phase6-coach-view"><section className="phase6-coach-empty"><h1>Kein Live-Training aktiv</h1><p>Starte oder veröffentliche zuerst einen Trainingstag.</p><Link href="/trainer">Zum Trainer-Dashboard</Link></section></main>;
 
+  const connectionLabel = realtimeState === "connected" ? "Echtzeit" : realtimeState === "connecting" ? "Verbinden" : "Fallback";
+
   return (
     <main className="phase6-coach-view">
       <header className="phase6-coach-header">
         <div><span>COACH VIEW</span><h1>{training.trainingPlan.title}</h1><p>{training.trainingPlan.goal} · {training.trainingPlan.durationMin} Minuten</p></div>
-        <div className="phase6-coach-header-actions"><div><i /><strong>Live</strong><small>{lastUpdated?.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small></div><Link href="/trainer/live">Control Center</Link></div>
+        <div className="phase6-coach-header-actions"><div><i /><strong>{connectionLabel}</strong><small>{lastUpdated?.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</small></div><Link href="/trainer/live">Control Center</Link></div>
       </header>
 
       <section className="phase6-coach-kpis">
