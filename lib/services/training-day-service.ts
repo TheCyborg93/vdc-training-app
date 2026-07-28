@@ -1,4 +1,6 @@
 import { mapTrainingDayToDto } from "@/lib/dto/training-day";
+import { eventBus } from "@/lib/events/event-bus";
+import { registerCoreEventListeners } from "@/lib/events/register-core-listeners";
 import {
   createPublishedTrainingDay,
   findTrainingDayById,
@@ -14,12 +16,22 @@ export class TrainingDayServiceError extends Error {
   }
 }
 
+type PublishContext = {
+  actorId?: number;
+  correlationId?: string;
+};
+
 export async function getTrainingDayWorkspace() {
   const [plans, players, boards, trainingDays] = await loadTrainingDayWorkspace();
   return { plans, players, boards, trainingDays };
 }
 
-export async function publishTrainingDay(input: PublishTrainingDayInput) {
+export async function publishTrainingDay(
+  input: PublishTrainingDayInput,
+  context: PublishContext = {},
+) {
+  registerCoreEventListeners();
+
   const [plan, boards, players] = await validateTrainingDayResources(input);
 
   if (!plan) {
@@ -38,6 +50,21 @@ export async function publishTrainingDay(input: PublishTrainingDayInput) {
   if (!trainingDay) {
     throw new TrainingDayServiceError("Der veröffentlichte Trainingstag konnte nicht erneut geladen werden.", 500);
   }
+
+  await eventBus.publish({
+    name: "training.day.created",
+    payload: {
+      trainingDayId,
+      trainingPlanId: input.trainingPlanId,
+      boardIds: input.boardIds,
+      playerIds: input.playerIds,
+    },
+    metadata: {
+      source: "training-day-service",
+      actorId: context.actorId,
+      correlationId: context.correlationId,
+    },
+  });
 
   return mapTrainingDayToDto(trainingDay);
 }
