@@ -85,6 +85,14 @@ enum ResultAuditAction {
   DELETED
 }
 
+enum DomainEventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  RETRY
+  DEAD_LETTER
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   name         String
@@ -371,4 +379,22 @@ model ResultAudit {
 
   @@index([exerciseResultId])
   @@index([homeExerciseResultId])
+}
+
+model DomainEventRecord {
+  id            String            @id
+  name          String
+  payloadJson   Json
+  metadataJson  Json
+  occurredAt    DateTime
+  status        DomainEventStatus @default(PENDING)
+  attempts      Int               @default(0)
+  nextAttemptAt DateTime?
+  processedAt   DateTime?
+  lastError     String?           @db.Text
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([name, occurredAt])
 }
