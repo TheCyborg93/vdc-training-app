@@ -15,9 +15,8 @@ import type {
   StoredBackgroundJob,
 } from "@/lib/jobs/types";
 
-type HandlerRegistry = Partial<{
-  [TType in BackgroundJobType]: BackgroundJobHandler<TType>;
-}>;
+type RuntimeHandler = (job: StoredBackgroundJob) => Promise<unknown>;
+type HandlerRegistry = Partial<Record<BackgroundJobType, RuntimeHandler>>;
 
 const globalForJobs = globalThis as typeof globalThis & {
   vdcBackgroundJobHandlers?: HandlerRegistry;
@@ -30,7 +29,7 @@ export function registerBackgroundJobHandler<TType extends BackgroundJobType>(
   type: TType,
   handler: BackgroundJobHandler<TType>,
 ) {
-  handlers[type] = handler as HandlerRegistry[TType];
+  handlers[type] = handler as RuntimeHandler;
 }
 
 export async function enqueueBackgroundJob<TType extends BackgroundJobType>(
@@ -47,9 +46,7 @@ export async function enqueueBackgroundJob<TType extends BackgroundJobType>(
 }
 
 async function executeJob(job: StoredBackgroundJob) {
-  const handler = handlers[job.type] as
-    | BackgroundJobHandler<typeof job.type>
-    | undefined;
+  const handler = handlers[job.type];
 
   if (!handler) {
     throw new Error(`Kein Handler für Hintergrundjob ${job.type} registriert.`);
