@@ -38,7 +38,8 @@ CREATE UNIQUE INDEX "EventActivity_eventId_projectionKey_key" ON "EventActivity"
 CREATE INDEX "EventActivity_trainingDayId_occurredAt_idx" ON "EventActivity"("trainingDayId", "occurredAt");
 CREATE INDEX "EventActivity_audience_occurredAt_idx" ON "EventActivity"("audience", "occurredAt");
 
-CREATE UNIQUE INDEX "AppNotification_eventId_projectionKey_recipientUserId_key" ON "AppNotification"("eventId", "projectionKey", "recipientUserId");
+CREATE UNIQUE INDEX "AppNotification_event_projection_recipient_key"
+  ON "AppNotification"("eventId", "projectionKey", COALESCE("recipientUserId", -1));
 CREATE INDEX "AppNotification_recipientUserId_readAt_createdAt_idx" ON "AppNotification"("recipientUserId", "readAt", "createdAt");
 CREATE INDEX "AppNotification_audience_createdAt_idx" ON "AppNotification"("audience", "createdAt");
 
