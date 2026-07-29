@@ -26,6 +26,11 @@ function finiteNumber(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+export function catch40DartLimit(targetValue: unknown): 6 | 9 {
+  const target = Math.trunc(finiteNumber(targetValue, 40));
+  return target >= 91 ? 9 : 6;
+}
+
 export function engineDefinition(kind: string, configValue?: unknown): EngineDefinition {
   const config = objectValue(configValue);
   const plugin = engineV3Profile(kind, config);
@@ -42,7 +47,9 @@ export function engineDefinition(kind: string, configValue?: unknown): EngineDef
 
   if (plugin.inputMode === "SCORE" || plugin.inputMode === "X01") {
     definition.minScore = 0;
-    definition.maxScore = 180;
+    definition.maxScore = kind === "CATCH_40"
+      ? catch40DartLimit(config.target ?? config.startTarget) * 60
+      : 180;
   }
   if (plugin.inputMode === "CHECKOUT") {
     definition.maxDarts = Math.max(1, Math.min(9, Math.trunc(finiteNumber(config.maxDarts ?? config.dartsPerAttempt, 3))));
@@ -65,6 +72,17 @@ export function normalizeEngineVisit(kind: string, configValue: unknown, rawValu
     const double = clamp(raw.double, 0, definition.dartsPerVisit - single);
     const triple = clamp(raw.triple, 0, definition.dartsPerVisit - single - double);
     return { single, double, triple, hits: single + double + triple };
+  }
+  if (kind === "CATCH_40") {
+    const target = clamp(raw.target ?? config.target ?? config.startTarget, 40, 170);
+    const dartsAllowed = catch40DartLimit(target);
+    const maxScore = dartsAllowed * 60;
+    return {
+      score: clamp(raw.score ?? raw.value, 0, maxScore),
+      target,
+      dartsAllowed,
+      reachedTarget: clamp(raw.score ?? raw.value, 0, maxScore) >= target,
+    };
   }
   if (definition.inputMode === "SCORE") return { score: clamp(raw.score ?? raw.value, definition.minScore ?? 0, definition.maxScore ?? 180), finish: raw.finish === true };
   if (definition.inputMode === "X01") return {
