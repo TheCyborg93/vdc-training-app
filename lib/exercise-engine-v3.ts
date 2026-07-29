@@ -60,6 +60,17 @@ const plugins: EngineV3Plugin[] = [
     aliases: ["GAME_121", "CHECKOUT_RANGE", "FIXED_CHECKOUT", "RANDOM_CHECKOUT"],
   },
   {
+    id: "catch-40",
+    label: "Catch 40",
+    inputMode: "SCORE",
+    defaultDartsPerVisit: 6,
+    sharedGame: false,
+    areas: ["CHECKOUT", "SCORING", "MENTAL"],
+    liveMetrics: ["Aktuelles Ziel", "Erzielter Score", "Dartlimit", "Zielerreichung"],
+    coachSignals: ["catch40Score", "finishRange", "pressureTrend", "scoreEfficiency"],
+    aliases: ["CATCH_40"],
+  },
+  {
     id: "cricket",
     label: "Cricket",
     inputMode: "CRICKET",
