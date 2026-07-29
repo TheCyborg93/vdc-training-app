@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { engineDefinition } from "@/lib/exercise-engine-v2";
+import { catch40DartLimit, engineDefinition } from "@/lib/exercise-engine-v2";
 
 type ExerciseState = {
   kind?: string; visit?: number; score?: number; target?: string; dartsThrown?: number; hits?: number;
@@ -37,11 +37,12 @@ function payloadSummary(payload: Record<string, unknown>) {
   return "Eingabe gespeichert";
 }
 function targetCopy(kind: string, target: string | undefined, exerciseName: string) {
-  if (target) return kind.includes("CHECKOUT") || kind === "GAME_121" ? `Checkout ${target}` : `Treffer auf ${target}`;
+  if (target) return kind.includes("CHECKOUT") || kind === "GAME_121" || kind === "CATCH_40" ? `Checkout ${target}` : `Treffer auf ${target}`;
   if (kind.includes("100_DARTS")) return "100 Darts";
   return exerciseName;
 }
-function modeLabel(mode: string) {
+function modeLabel(mode: string, kind: string) {
+  if (kind === "CATCH_40") return "Catch 40";
   return ({ SCORE: "Scoring", X01: "X01", SEGMENTS: "Segmente", HITS: "Treffer", CHECKOUT: "Checkout", CRICKET: "Cricket", KILLER: "Killer", BOARD_GAME: "Boardspiel" } as Record<string,string>)[mode] ?? "Ergebnis";
 }
 
@@ -69,7 +70,13 @@ export default function ExerciseResultInput({
   const usedDarts = single + double + triple;
   const locked = disabled || paused || submitting || busyAction !== null;
   const numericScore = score === "" ? null : Number(score);
-  const scoreInvalid = numericScore !== null && (!Number.isInteger(numericScore) || numericScore < 0 || numericScore > 180 || IMPOSSIBLE_SCORES.has(numericScore));
+  const catch40Target = Math.max(40, Math.min(170, Math.trunc(Number(state?.target ?? config.target ?? config.startTarget ?? 40))));
+  const catch40Darts = catch40DartLimit(catch40Target);
+  const catch40MaxScore = catch40Darts * 60;
+  const scoreInvalid = numericScore !== null && (
+    !Number.isInteger(numericScore) || numericScore < 0 ||
+    (kind === "CATCH_40" ? numericScore > catch40MaxScore : numericScore > 180 || IMPOSSIBLE_SCORES.has(numericScore))
+  );
 
   function resetEntry() {
     setScore(""); setSingle(0); setDouble(0); setTriple(0); setCheckout(false); setCheckoutType("NONE");
@@ -157,6 +164,10 @@ export default function ExerciseResultInput({
   } else if (definition.inputMode === "BOARD_GAME") {
     const targets = Array.isArray(config.targets) ? config.targets : []; currentTarget = state?.target ?? targets[0] ?? exerciseName; currentTargetCopy = "Aktuelles Spielfeld";
     module = <div className="vdcx-target-grid">{targets.map(item => <button type="button" disabled={locked} key={String(item)} onClick={() => void dispatch({ target: String(item) })}>{String(item)}</button>)}</div>;
+  } else if (kind === "CATCH_40") {
+    currentValue = state?.score ?? 0; valueLabel = "Punkte"; currentTarget = catch40Target; currentTargetCopy = `Catch 40 · ${catch40Darts} Darts`;
+    const reached = numericScore !== null && numericScore >= catch40Target;
+    module = <><div className="vdcx-mini-stats"><div><span>Aktuelles Ziel</span><strong>{catch40Target}</strong></div><div><span>Dartlimit</span><strong>{catch40Darts} Darts</strong></div><div><span>Maximaler Score</span><strong>{catch40MaxScore}</strong></div></div><ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void submitScore({ target: catch40Target, dartsAllowed: catch40Darts, reachedTarget: reached })} max={catch40MaxScore} quickScores={[40, 60, 80, 100, 120, 180]} placeholder={`0–${catch40MaxScore}`} /><Guidance tone={scoreInvalid ? "error" : reached ? "info" : numericScore !== null ? "warning" : "neutral"}>{scoreInvalid ? `Bitte einen Score zwischen 0 und ${catch40MaxScore} eingeben.` : reached ? `Ziel ${catch40Target} erreicht oder übertroffen.` : numericScore !== null ? `${catch40Target - numericScore} Punkte unter dem Ziel.` : `Gesamtscore aus maximal ${catch40Darts} Darts eingeben.`}</Guidance><PrimaryButton disabled={locked || numericScore === null || scoreInvalid} busy={submitting} onClick={() => void submitScore({ target: catch40Target, dartsAllowed: catch40Darts, reachedTarget: reached })}>Catch-40-Ergebnis speichern</PrimaryButton></>;
   } else {
     currentValue = state?.score ?? 0; valueLabel = "Punkte"; currentTarget = state?.target ?? (definition.inputMode === "SCORE" ? "Score" : exerciseName); currentTargetCopy = definition.inputMode === "SCORE" ? "Punkte dieser Aufnahme" : currentTargetCopy;
     module = <><ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void submitScore()} /><Guidance tone={scoreInvalid ? "error" : numericScore !== null ? "info" : "neutral"}>{scoreInvalid ? "Dieser Score ist nicht möglich." : numericScore !== null ? `${numericScore} Punkte bereit zum Speichern.` : "Score eingeben oder Schnellwert wählen."}</Guidance><PrimaryButton disabled={locked || numericScore === null || scoreInvalid} busy={submitting} onClick={() => void submitScore()}>Aufnahme speichern</PrimaryButton></>;
@@ -166,7 +177,7 @@ export default function ExerciseResultInput({
     <header className="vdcx-topbar"><div className="vdcx-training"><span>Training</span><strong>{trainingName ?? state?.trainingName ?? "Dart-Training"}</strong><small>{exerciseName}</small></div><div className="vdcx-player"><span>Wer ist dran</span><strong>{playerName ?? state?.playerName ?? "Aktiver Spieler"}</strong><small><i/>{paused ? "Pausiert" : submitting ? "Wird gespeichert" : "Bereit"}</small></div><button type="button" className="vdcx-finish" disabled={locked} onClick={() => void runAction("finish", onFinish ?? (() => dispatch({ finish: true }, false)))}><span>Beenden</span><b>×</b></button></header>
     <div className="vdcx-metrics"><Metric label="Aktueller Punktestand" value={currentValue} caption={valueLabel}/><Metric label="Aktuelles Ziel" value={currentTarget} caption={currentTargetCopy} target/></div>
     {(completionMode === "TIME_LIMIT" || limitCurrent != null) && completionValue ? <div className={`vdcx-limit ${remainingSeconds != null && remainingSeconds <= 30 ? "is-urgent" : ""}`}><span>{progressLabel}</span><strong>{progressValue}</strong></div> : null}
-    <main className="vdcx-input"><div className="vdcx-input-head"><div><span>Eingabe</span><strong>{modeLabel(definition.inputMode)}</strong></div><div><span>Aufnahme</span><strong>{state?.visit ?? 1}</strong></div></div><div className="vdcx-module">{module}</div>{feedback && <div className={`vdcx-feedback is-${feedback.tone}`} role="status" aria-live="polite"><b>{feedback.tone === "success" ? "✓" : "!"}</b><div><strong>{feedback.title}</strong><p>{feedback.detail}</p></div></div>}</main>
+    <main className="vdcx-input"><div className="vdcx-input-head"><div><span>Eingabe</span><strong>{modeLabel(definition.inputMode, kind)}</strong></div><div><span>Aufnahme</span><strong>{state?.visit ?? 1}</strong></div></div><div className="vdcx-module">{module}</div>{feedback && <div className={`vdcx-feedback is-${feedback.tone}`} role="status" aria-live="polite"><b>{feedback.tone === "success" ? "✓" : "!"}</b><div><strong>{feedback.title}</strong><p>{feedback.detail}</p></div></div>}</main>
     <footer className="vdcx-actions"><button type="button" disabled={locked} onClick={() => void runAction("undo", onUndo)}><span>↶</span><strong>{busyAction === "undo" ? "Wird ausgeführt …" : "Rückgängig"}</strong></button><button type="button" className={paused ? "is-active" : ""} disabled={locked || !onPause} onClick={() => void runAction("pause", onPause)}><span>{paused ? "▶" : "Ⅱ"}</span><strong>{busyAction === "pause" ? "Wird ausgeführt …" : paused ? "Fortsetzen" : "Pause"}</strong></button></footer>
   </section>;
 }
@@ -176,4 +187,4 @@ function PrimaryButton({ disabled, busy, onClick, children }: { disabled:boolean
 function Toggle({ active, success=false, disabled, onClick, children }: { active:boolean; success?:boolean; disabled:boolean; onClick:()=>void; children:React.ReactNode }) { return <button type="button" className={`vdcx-toggle ${active ? "is-active" : ""} ${success && active ? "is-success" : ""}`} disabled={disabled} onClick={onClick}>{children}</button>; }
 function Guidance({ tone, children }: { tone:"neutral"|"info"|"warning"|"error"; children:React.ReactNode }) { return <div className={`vdcx-guidance is-${tone}`}>{children}</div>; }
 function DartsSelector({ value, max, disabled, onChange }: { value:number; max:number; disabled:boolean; onChange:(n:number)=>void }) { return <div className="vdcx-darts"><span>Verwendete Darts</span><div>{Array.from({length:max},(_,i)=>i+1).map(n => <button type="button" disabled={disabled} className={value===n ? "is-active" : ""} key={n} onClick={() => onChange(n)}>{n}</button>)}</div></div>; }
-const ScoreInput = forwardRef<HTMLInputElement, { value:string; onChange:(s:string)=>void; disabled:boolean; onSubmit:()=>void }>(function ScoreInput({ value, onChange, disabled, onSubmit }, ref) { return <div className="vdcx-score"><label><span>Score</span><input ref={ref} disabled={disabled} autoFocus type="number" inputMode="numeric" min="0" max="180" value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && value !== "" && !disabled) { e.preventDefault(); onSubmit(); } }} placeholder="0–180"/></label><div>{QUICK_SCORES.map(n => <button type="button" disabled={disabled} className={value===String(n) ? "is-active" : ""} key={n} onClick={() => onChange(String(n))}>{n}</button>)}</div><small>Enter speichert die Aufnahme</small></div>; });
+const ScoreInput = forwardRef<HTMLInputElement, { value:string; onChange:(s:string)=>void; disabled:boolean; onSubmit:()=>void; max?:number; quickScores?:number[]; placeholder?:string }>(function ScoreInput({ value, onChange, disabled, onSubmit, max = 180, quickScores = QUICK_SCORES, placeholder = "0–180" }, ref) { return <div className="vdcx-score"><label><span>Score</span><input ref={ref} disabled={disabled} autoFocus type="number" inputMode="numeric" min="0" max={max} value={value} onChange={e => onChange(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && value !== "" && !disabled) { e.preventDefault(); onSubmit(); } }} placeholder={placeholder}/></label><div>{quickScores.filter(n => n <= max).map(n => <button type="button" disabled={disabled} className={value===String(n) ? "is-active" : ""} key={n} onClick={() => onChange(String(n))}>{n}</button>)}</div><small>Enter speichert die Aufnahme</small></div>; });
