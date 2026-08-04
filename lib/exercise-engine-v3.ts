@@ -24,7 +24,10 @@ const plugins: EngineV3Plugin[] = [
     areas: ["CONSISTENCY"],
     liveMetrics: ["Trefferquote", "Darts", "Ziel-Fortschritt"],
     coachSignals: ["targetAccuracy", "missStreak", "completionSpeed"],
-    aliases: ["BOB27", "BOB27_CONFIGURED", "AROUND_CLOCK", "AROUND_DOUBLES", "AROUND_TREBLES", "AROUND_SEQUENCE", "HIT_ROUNDS", "HIT_TARGET"],
+    aliases: [
+      "BOB27", "BOB27_CONFIGURED", "AROUND_CLOCK", "AROUND_DOUBLES", "AROUND_TREBLES",
+      "AROUND_SEQUENCE", "HIT_ROUNDS", "HIT_TARGET", "DOUBLES_ROUNDS", "BULL_ROUNDS",
+    ],
   },
   {
     id: "segment-training",
@@ -57,7 +60,7 @@ const plugins: EngineV3Plugin[] = [
     areas: ["CHECKOUT", "DOUBLES", "MENTAL"],
     liveMetrics: ["Aktuelles Finish", "Versuche", "Erfolge", "Darts pro Checkout"],
     coachSignals: ["checkoutRate", "firstVisitFinish", "finishRange", "pressureTrend"],
-    aliases: ["GAME_121", "CHECKOUT_RANGE", "FIXED_CHECKOUT", "RANDOM_CHECKOUT"],
+    aliases: ["GAME_121", "CHECKOUT_RANGE", "FIXED_CHECKOUT", "RANDOM_CHECKOUT", "CHECKOUT_LADDER"],
   },
   {
     id: "catch-40",
@@ -112,7 +115,7 @@ const plugins: EngineV3Plugin[] = [
     areas: ["SCORING", "CONSISTENCY"],
     liveMetrics: ["Score", "Average", "Highscore", "Konstanz"],
     coachSignals: ["scoringAverage", "highVisitRate", "scoreDeviation"],
-    aliases: ["SCORING", "FIVES", "COUNT_UP"],
+    aliases: ["SCORING", "FIVES", "COUNT_UP", "TIME_BASED"],
   },
 ];
 
@@ -125,11 +128,12 @@ const fallback: EngineV3Plugin = {
   areas: ["CONSISTENCY"],
   liveMetrics: ["Ergebnis", "Aufnahmen"],
   coachSignals: ["completionRate"],
-  aliases: [],
+  aliases: ["AUTO", "CUSTOM"],
 };
 
 const registry = new Map<string, EngineV3Plugin>();
 for (const plugin of plugins) for (const alias of plugin.aliases) registry.set(alias, plugin);
+for (const alias of fallback.aliases) registry.set(alias, fallback);
 
 export function resolveEngineV3(kind: string): EngineV3Plugin {
   return registry.get(kind) ?? fallback;
