@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import type { StoredBackgroundJob } from "@/lib/jobs/types";
+import { refreshPlayerAnalyticsSnapshot } from "@/lib/analytics/player-analytics-snapshot";
+
+const ANALYTICS_PERIODS = [30, 90, 180, 365] as const;
 
 function numericScore(value: number | null) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -118,12 +121,74 @@ export async function buildTrainingAnalytics(trainingDayId: number) {
   };
 }
 
+async function resolveAnalyticsPlayerIds(payload: StoredBackgroundJob<"ANALYTICS_REFRESH">["payload"]) {
+  if (payload.playerId) return [payload.playerId];
+
+  if (payload.trainingDayId) {
+    const rows = await prisma.trainingDayPlayer.findMany({
+      where: { trainingDayId: payload.trainingDayId },
+      select: { playerId: true },
+      orderBy: { playerId: "asc" },
+    });
+    return rows.map((row) => row.playerId);
+  }
+
+  const players = await prisma.player.findMany({
+    where: { active: true },
+    select: { id: true },
+    orderBy: { id: "asc" },
+  });
+  return players.map((player) => player.id);
+}
+
+async function refreshPlayerSnapshots(playerIds: number[]) {
+  const refreshed: Array<{ playerId: number; periods: number[] }> = [];
+  const failures: Array<{ playerId: number; periodDays: number; error: string }> = [];
+
+  for (const playerId of [...new Set(playerIds)]) {
+    const periods: number[] = [];
+    for (const periodDays of ANALYTICS_PERIODS) {
+      try {
+        const result = await refreshPlayerAnalyticsSnapshot(playerId, periodDays);
+        if (result) periods.push(periodDays);
+      } catch (error) {
+        failures.push({
+          playerId,
+          periodDays,
+          error: error instanceof Error ? error.message : "Unbekannter Analysefehler",
+        });
+      }
+    }
+    if (periods.length) refreshed.push({ playerId, periods });
+  }
+
+  return { refreshed, failures };
+}
+
 export async function handleAnalyticsRefreshJob(
   job: StoredBackgroundJob<"ANALYTICS_REFRESH">,
 ) {
-  const trainingDayId = job.payload.trainingDayId;
-  if (!trainingDayId) throw new Error("ANALYTICS_REFRESH benötigt eine trainingDayId.");
-  return buildTrainingAnalytics(trainingDayId);
+  const playerIds = await resolveAnalyticsPlayerIds(job.payload);
+  const snapshots = await refreshPlayerSnapshots(playerIds);
+  const trainingAnalytics = job.payload.trainingDayId
+    ? await buildTrainingAnalytics(job.payload.trainingDayId)
+    : null;
+
+  if (!snapshots.refreshed.length && snapshots.failures.length) {
+    throw new Error(`Keine Spieleranalyse konnte aktualisiert werden: ${snapshots.failures[0]?.error}`);
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    scope: job.payload.playerId
+      ? "PLAYER"
+      : job.payload.trainingDayId
+        ? "TRAINING_DAY"
+        : "CLUB",
+    playerCount: playerIds.length,
+    snapshots,
+    trainingAnalytics,
+  };
 }
 
 export async function handleTrainingReportJob(
