@@ -31,6 +31,17 @@ export async function refreshPlayerAnalyticsSnapshot(
     engineDistribution: analytics.engineDistribution,
   });
 
+  const targetStatistics = [
+    ...analytics.checkoutRanges.map((range) => ({
+      category: "CHECKOUT_RANGE",
+      targetKey: range.range,
+      attempts: range.attempts,
+      successes: range.successes,
+      rate: range.rate,
+    })),
+    ...analytics.targetStatistics,
+  ];
+
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
       INSERT INTO "PlayerPerformanceSnapshot" (
@@ -66,14 +77,14 @@ export async function refreshPlayerAnalyticsSnapshot(
       WHERE "playerId" = ${playerId} AND "periodDays" = ${period}
     `;
 
-    for (const range of analytics.checkoutRanges) {
+    for (const statistic of targetStatistics) {
       await tx.$executeRaw`
         INSERT INTO "PlayerTargetStatistic" (
           "playerId", "periodDays", "category", "targetKey", "attempts",
           "successes", "rate", "generatedAt", "updatedAt"
         ) VALUES (
-          ${playerId}, ${period}, 'CHECKOUT_RANGE', ${range.range},
-          ${range.attempts}, ${range.successes}, ${range.rate},
+          ${playerId}, ${period}, ${statistic.category}, ${statistic.targetKey},
+          ${statistic.attempts}, ${statistic.successes}, ${statistic.rate},
           ${generatedAt}, CURRENT_TIMESTAMP
         )
       `;
@@ -101,7 +112,7 @@ export async function refreshPlayerAnalyticsSnapshot(
     playerId,
     periodDays: period,
     generatedAt: generatedAt.toISOString(),
-    targetStatistics: analytics.checkoutRanges.length,
+    targetStatistics: targetStatistics.length,
     trendPoints: analytics.trend.length,
   };
 }
