@@ -32,6 +32,10 @@ function focusExercise(category: string, targetKey: string) {
   return [`Catch 40 – Checkout ${targetKey}`, "121 – The Checkout Game", "Random Checkout"];
 }
 
+function comparisonRange(window: { start: string; end: string }) {
+  return { from: window.start, to: window.end };
+}
+
 function buildComparison(
   current: NonNullable<Awaited<ReturnType<typeof buildPlayerAnalytics>>>,
   previous: NonNullable<Awaited<ReturnType<typeof buildPlayerAnalytics>>>,
@@ -91,8 +95,8 @@ function buildComparison(
 
   return {
     hasComparison,
-    currentRange: current.range,
-    previousRange: previous.range,
+    currentRange: comparisonRange(current.window),
+    previousRange: comparisonRange(previous.window),
     previousResults: previous.overview.results,
     metrics,
     strongestImprovement,
@@ -117,7 +121,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const current = await buildPlayerAnalytics(playerId, periodDays);
     if (!current) return NextResponse.json({ error: "Spieler nicht gefunden." }, { status: 404 });
 
-    const previous = await buildPlayerAnalytics(playerId, periodDays, new Date(current.range.from));
+    const previous = await buildPlayerAnalytics(playerId, periodDays, new Date(current.window.start));
     if (!previous) return NextResponse.json({ error: "Spieler nicht gefunden." }, { status: 404 });
 
     let snapshot = null;
