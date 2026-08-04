@@ -81,11 +81,11 @@ function buildComparison(
     }));
 
   const improvingTargets = targetChanges
-    .filter((item) => item.delta !== null && item.delta > 0)
+    .filter((item) => (item.delta ?? 0) > 0)
     .sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0))
     .slice(0, 3);
   const decliningTargets = targetChanges
-    .filter((item) => item.delta !== null && item.delta < 0)
+    .filter((item) => (item.delta ?? 0) < 0)
     .sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0))
     .slice(0, 3);
 
