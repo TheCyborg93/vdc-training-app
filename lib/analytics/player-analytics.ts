@@ -130,17 +130,19 @@ function addTargetStat(
   map.set(key, current);
 }
 
-export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
-  const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+export async function buildPlayerAnalytics(playerId: number, periodDays = 90, endAtValue: Date = new Date()) {
+  const endAt = new Date(endAtValue);
+  const since = new Date(endAt.getTime() - periodDays * 24 * 60 * 60 * 1000);
   const player = await prisma.player.findUnique({
     where: { id: playerId },
     select: { id: true, displayName: true, firstName: true, lastName: true, active: true },
   });
   if (!player) return null;
 
+  const dateWindow = { gte: since, lt: endAt };
   const [club, home] = await Promise.all([
     prisma.exerciseResult.findMany({
-      where: { playerId, deletedAt: null, createdAt: { gte: since } },
+      where: { playerId, deletedAt: null, createdAt: dateWindow },
       orderBy: { createdAt: "asc" },
       select: {
         boardSessionId: true,
@@ -153,7 +155,7 @@ export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
       },
     }),
     prisma.homeExerciseResult.findMany({
-      where: { playerId, deletedAt: null, createdAt: { gte: since } },
+      where: { playerId, deletedAt: null, createdAt: dateWindow },
       orderBy: { createdAt: "asc" },
       select: {
         homeTrainingSessionId: true,
@@ -236,6 +238,7 @@ export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
   return {
     generatedAt: new Date().toISOString(),
     periodDays,
+    window: { start: since.toISOString(), end: endAt.toISOString() },
     player,
     overview: {
       results: results.length,
