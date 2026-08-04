@@ -24,9 +24,15 @@ const enqueueRetrySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 
+const enqueueAnalyticsSchema = z.object({
+  action: z.literal("ENQUEUE_ANALYTICS_REFRESH"),
+  playerId: z.coerce.number().int().positive().optional(),
+});
+
 const commandSchema = z.discriminatedUnion("action", [
   processSchema,
   enqueueRetrySchema,
+  enqueueAnalyticsSchema,
 ]);
 
 async function requireAdmin() {
@@ -105,6 +111,18 @@ export async function POST(request: Request) {
         createdById: admin.id,
       });
       return NextResponse.json({ queued: true, jobId: job.id }, { status: 202 });
+    }
+
+    if (parsed.data.action === "ENQUEUE_ANALYTICS_REFRESH") {
+      const scope = parsed.data.playerId ? `player-${parsed.data.playerId}` : "club";
+      const job = await enqueueBackgroundJob({
+        type: "ANALYTICS_REFRESH",
+        payload: parsed.data.playerId ? { playerId: parsed.data.playerId } : {},
+        priority: 15,
+        createdById: admin.id,
+        dedupeKey: `analytics-refresh:${scope}`,
+      });
+      return NextResponse.json({ queued: true, jobId: job.id, scope }, { status: 202 });
     }
 
     registerCoreBackgroundJobHandlers();
