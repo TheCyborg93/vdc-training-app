@@ -107,7 +107,10 @@ export default function PlayerProfilePage() {
     }
     return map;
   }, [analytics?.targetStatistics]);
-  const deltas = useMemo(() => new Map((analytics?.comparison.metrics ?? []).map((item) => [item.key, item])), [analytics?.comparison.metrics]);
+  const deltas = useMemo(
+    () => new Map<string, MetricDelta>((analytics?.comparison.metrics ?? []).map((item) => [item.key, item] as const)),
+    [analytics?.comparison.metrics],
+  );
 
   if (loading && !analytics) return <main className="dashboard-page"><div className="card"><p>Spielerprofil wird analysiert …</p></div></main>;
   if (error || !player) return <main className="dashboard-page"><div className="card"><h1>Profil nicht verfügbar</h1><p>{error || "Der Spieler wurde nicht gefunden."}</p><Link className="button secondary" href="/trainer/spieler">Zurück zu Spielern</Link></div></main>;
