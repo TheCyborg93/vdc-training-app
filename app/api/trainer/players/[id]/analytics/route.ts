@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
-import { buildPlayerAnalytics } from "@/lib/analytics/player-analytics";
+import { buildPlayerAnalytics, type PlayerTargetAnalytics } from "@/lib/analytics/player-analytics";
 import {
   getPlayerAnalyticsSnapshot,
   refreshPlayerAnalyticsSnapshot,
@@ -52,8 +52,8 @@ function buildComparison(
   const strongestImprovement = [...comparable].sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0))[0] ?? null;
   const biggestDecline = [...comparable].sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0))[0] ?? null;
 
-  const previousTargets = new Map(
-    previous.targetStatistics.map((item) => [`${item.category}:${item.targetKey}`, item]),
+  const previousTargets = new Map<string, PlayerTargetAnalytics>(
+    previous.targetStatistics.map((item) => [`${item.category}:${item.targetKey}`, item] as const),
   );
   const targetChanges = current.targetStatistics
     .filter((item) => item.attempts >= 3)
