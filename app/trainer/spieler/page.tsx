@@ -102,7 +102,7 @@ export default function PlayersPage() {
     <main className="dashboard-page player-v3-page">
       <section className="dashboard-heading">
         <div><div className="eyebrow">Digitaler Dart-Zwilling</div><h1>Spieler</h1><p>Nur Vorname und Dartname werden gepflegt. Leistung, Form und Empfehlungen entstehen automatisch aus dem Training.</p></div>
-        <Link className="button secondary" href="/trainer/ai-coach">AI Coach öffnen</Link>
+        <div className="actions"><Link className="button secondary" href="/trainer/spieler/vergleich">Vereinsvergleich</Link><Link className="button" href="/trainer/ai-coach">AI Coach öffnen</Link></div>
       </section>
 
       <section className="player-admin-layout">
