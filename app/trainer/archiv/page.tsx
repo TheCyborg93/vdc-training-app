@@ -1,83 +1,146 @@
+"use client";
+
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { useEffect, useMemo, useState } from "react";
 
-export const dynamic = "force-dynamic";
+type Player = { id: number; displayName: string };
+type HistoryItem = {
+  id: string;
+  sourceId: number;
+  type: "CLUB" | "HOME";
+  title: string;
+  goal: string;
+  startedAt: string;
+  completedAt: string | null;
+  durationMin: number;
+  players: { id: number; name: string }[];
+  boards: string[];
+  exercises: string[];
+  resultCount: number;
+  average: number | null;
+  highScore: number | null;
+  detailHref: string;
+};
+type HistoryResponse = {
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  summary: { sessions: number; clubSessions: number; homeSessions: number; totalMinutes: number; resultCount: number; players: number; average: number | null };
+  items: HistoryItem[];
+};
 
-function numeric(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function formatNumber(value: number | null, digits = 1) {
+  return value == null ? "–" : value.toLocaleString("de-DE", { maximumFractionDigits: digits });
 }
 
-function format(value: number | null, digits = 1) {
-  return value === null ? "–" : value.toLocaleString("de-DE", { maximumFractionDigits: digits });
-}
+export default function TrainingArchivePage() {
+  const [data, setData] = useState<HistoryResponse | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("");
+  const [playerId, setPlayerId] = useState("");
+  const [periodDays, setPeriodDays] = useState(365);
 
-export default async function TrainingArchivePage() {
-  const days = await prisma.trainingDay.findMany({
-    where: { status: "COMPLETED" },
-    orderBy: { trainingDate: "desc" },
-    include: {
-      trainingPlan: { include: { exercises: { orderBy: { position: "asc" }, include: { exercise: true } } } },
-      assignments: { include: { player: true, board: true } },
-      sessions: { include: { board: true, results: { where: { deletedAt: null }, include: { player: true, exercise: true }, orderBy: { createdAt: "asc" } } } },
-    },
-  });
+  const params = useMemo(() => {
+    const value = new URLSearchParams({ periodDays: String(periodDays), limit: "30", offset: "0" });
+    if (query.trim()) value.set("query", query.trim());
+    if (type) value.set("type", type);
+    if (playerId) value.set("playerId", playerId);
+    return value;
+  }, [periodDays, playerId, query, type]);
 
-  const allResults = days.flatMap((day) => day.sessions.flatMap((session) => session.results));
-  const allScores = allResults.map((result) => numeric(result.calculatedScore)).filter((value): value is number => value !== null);
-  const average = allScores.length ? allScores.reduce((sum, value) => sum + value, 0) / allScores.length : null;
-  const uniquePlayers = new Set(days.flatMap((day) => day.assignments.map((assignment) => assignment.playerId))).size;
-  const totalMinutes = days.reduce((sum, day) => sum + day.trainingPlan.durationMin, 0);
+  useEffect(() => {
+    fetch("/api/players", { cache: "no-store" }).then((response) => response.json()).then((payload) => setPlayers(Array.isArray(payload) ? payload : [])).catch(() => setPlayers([]));
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/trainer/history?${params}`, { cache: "no-store", signal: controller.signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "Historie konnte nicht geladen werden.");
+        setData(payload);
+        setError("");
+      } catch (loadError) {
+        if ((loadError as Error).name !== "AbortError") setError(loadError instanceof Error ? loadError.message : "Historie konnte nicht geladen werden.");
+      } finally { setLoading(false); }
+    }, 250);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [params]);
+
+  async function loadMore() {
+    if (!data?.hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = new URLSearchParams(params);
+      next.set("offset", String(data.items.length));
+      const response = await fetch(`/api/trainer/history?${next}`, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Weitere Einträge konnten nicht geladen werden.");
+      setData({ ...payload, items: [...data.items, ...payload.items] });
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Weitere Einträge konnten nicht geladen werden.");
+    } finally { setLoadingMore(false); }
+  }
 
   return <main className="dashboard-page analysis-page">
     <section className="dashboard-heading analysis-heading">
-      <div><div className="eyebrow">Analysezentrum</div><h1>Trainingsarchiv</h1><p>Abgeschlossene Trainingstage, Teilnehmer und Leistungsdaten kompakt auswerten.</p></div>
-      <div className="analysis-heading-actions"><Link className="button secondary" href="/statistik">Spielerstatistik</Link><Link className="button" href="/trainer/trainingsplaene">Trainingspläne</Link></div>
+      <div><div className="eyebrow">Phase 7.2 · Trainingshistorie</div><h1>Trainingshistorie</h1><p>Vereins- und Heimtraining gemeinsam durchsuchen, vergleichen und bis zur einzelnen Einheit nachvollziehen.</p></div>
+      <div className="analysis-heading-actions"><Link className="button secondary" href="/trainer/spieler/vergleich">Vereinsvergleich</Link><Link className="button" href="/trainer/trainingsplaene">Trainingspläne</Link></div>
     </section>
 
     <section className="analysis-kpis">
-      <article><small>Trainingseinheiten</small><strong>{days.length}</strong><span>vollständig abgeschlossen</span></article>
-      <article><small>Trainingszeit</small><strong>{totalMinutes}</strong><span>geplante Minuten</span></article>
-      <article><small>Aufnahmen</small><strong>{allResults.length}</strong><span>gültig gespeichert</span></article>
-      <article><small>Spieler</small><strong>{uniquePlayers}</strong><span>verschiedene Teilnehmer</span></article>
-      <article><small>Ø Ergebnis</small><strong>{format(average)}</strong><span>numerische Ergebnisse</span></article>
+      <article><small>Einheiten</small><strong>{data?.summary.sessions ?? 0}</strong><span>{data?.summary.clubSessions ?? 0} Verein · {data?.summary.homeSessions ?? 0} Zuhause</span></article>
+      <article><small>Trainingszeit</small><strong>{data?.summary.totalMinutes ?? 0}</strong><span>Minuten im Zeitraum</span></article>
+      <article><small>Aufnahmen</small><strong>{data?.summary.resultCount ?? 0}</strong><span>gültig gespeichert</span></article>
+      <article><small>Spieler</small><strong>{data?.summary.players ?? 0}</strong><span>verschiedene Teilnehmer</span></article>
+      <article><small>Ø Ergebnis</small><strong>{formatNumber(data?.summary.average ?? null)}</strong><span>über alle Einheiten</span></article>
+    </section>
+
+    <section className="card">
+      <div className="section-heading"><div><span className="eyebrow">Filter</span><h2>Schnell zur gesuchten Einheit</h2></div><span className="analysis-count">{data?.total ?? 0} Treffer</span></div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,2fr) repeat(3,minmax(150px,1fr))", gap: 12 }}>
+        <label>Suche<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Training, Ziel, Übung oder Spieler" /></label>
+        <label>Trainingstyp<select value={type} onChange={(event) => setType(event.target.value)}><option value="">Alle</option><option value="CLUB">Verein</option><option value="HOME">Zuhause</option></select></label>
+        <label>Spieler<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}><option value="">Alle Spieler</option>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label>
+        <label>Zeitraum<select value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}><option value={30}>30 Tage</option><option value={90}>90 Tage</option><option value={180}>180 Tage</option><option value={365}>1 Jahr</option><option value={1095}>3 Jahre</option><option value={3650}>Gesamt</option></select></label>
+      </div>
     </section>
 
     <section className="analysis-section">
-      <div className="section-heading"><div><span className="eyebrow">Historie</span><h2>Abgeschlossene Trainingstage</h2></div><span className="analysis-count">{days.length} Einträge</span></div>
-      {days.length === 0 ? <div className="analysis-empty"><strong>Noch keine archivierten Trainings</strong><p>Sobald ein Trainingstag vollständig beendet wurde, erscheint er hier mit seinen Statistiken.</p><Link className="button" href="/trainer/trainingstag">Trainingstag öffnen</Link></div> : <div className="analysis-archive-list">
-        {days.map((day) => {
-          const results = day.sessions.flatMap((session) => session.results);
-          const scores = results.map((result) => numeric(result.calculatedScore)).filter((value): value is number => value !== null);
-          const dayAverage = scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
-          const best = scores.length ? Math.max(...scores) : null;
-          const players = [...new Map(day.assignments.map((assignment) => [assignment.player.id, assignment.player])).values()];
-          const boards = [...new Map(day.assignments.map((assignment) => [assignment.board.id, assignment.board])).values()];
-          const exerciseStats = day.trainingPlan.exercises.map((entry) => ({ name: entry.exercise.name, count: results.filter((result) => result.exerciseId === entry.exerciseId).length }));
-
-          return <article className="analysis-training-card" key={day.id}>
-            <header>
-              <div><small>{new Date(day.trainingDate).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small><h2>{day.trainingPlan.title}</h2><p>{day.trainingPlan.goal}</p></div>
-              <span className="analysis-status"><i /> Abgeschlossen</span>
-            </header>
-            <div className="analysis-training-facts">
-              <span><small>Dauer</small><strong>{day.trainingPlan.durationMin} Min.</strong></span>
-              <span><small>Spieler</small><strong>{players.length}</strong></span>
-              <span><small>Boards</small><strong>{boards.length}</strong></span>
-              <span><small>Übungen</small><strong>{day.trainingPlan.exercises.length}</strong></span>
-              <span><small>Aufnahmen</small><strong>{results.length}</strong></span>
-              <span><small>Ø Ergebnis</small><strong>{format(dayAverage)}</strong></span>
-              <span><small>Bestwert</small><strong>{best ?? "–"}</strong></span>
-            </div>
-            <div className="analysis-training-details">
-              <section><small>Teilnehmer</small><div className="analysis-chip-list">{players.map((player) => <span key={player.id}>{player.displayName}</span>)}</div></section>
-              <section><small>Boards</small><div className="analysis-chip-list">{boards.map((board) => <span key={board.id}>{board.name}</span>)}</div></section>
-            </div>
-            <div className="analysis-exercise-list">
-              {exerciseStats.map((item, index) => <div key={`${item.name}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><strong>{item.name}</strong><small>{item.count} Aufnahmen</small></div>)}
-            </div>
-          </article>;
-        })}
-      </div>}
+      <div className="section-heading"><div><span className="eyebrow">Chronik</span><h2>Trainingseinheiten</h2></div></div>
+      {error ? <div className="analysis-empty"><strong>Historie nicht verfügbar</strong><p>{error}</p></div> : null}
+      {loading && !data ? <div className="card"><p>Trainingshistorie wird geladen …</p></div> : null}
+      {!loading && data?.items.length === 0 ? <div className="analysis-empty"><strong>Keine passenden Einheiten</strong><p>Ändere den Zeitraum oder entferne einzelne Filter.</p></div> : null}
+      <div className="analysis-archive-list">
+        {(data?.items ?? []).map((item) => <article className="analysis-training-card" key={item.id}>
+          <header>
+            <div><small>{new Date(item.startedAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</small><h2>{item.title}</h2><p>{item.goal}</p></div>
+            <span className="analysis-status"><i /> {item.type === "CLUB" ? "Vereinstraining" : "Heimtraining"}</span>
+          </header>
+          <div className="analysis-training-facts">
+            <span><small>Dauer</small><strong>{item.durationMin} Min.</strong></span>
+            <span><small>Spieler</small><strong>{item.players.length}</strong></span>
+            <span><small>Boards</small><strong>{item.boards.length || "–"}</strong></span>
+            <span><small>Übungen</small><strong>{item.exercises.length}</strong></span>
+            <span><small>Aufnahmen</small><strong>{item.resultCount}</strong></span>
+            <span><small>Ø Ergebnis</small><strong>{formatNumber(item.average)}</strong></span>
+            <span><small>Bestwert</small><strong>{item.highScore ?? "–"}</strong></span>
+          </div>
+          <div className="analysis-training-details">
+            <section><small>Teilnehmer</small><div className="analysis-chip-list">{item.players.map((player) => <Link key={player.id} href={`/trainer/spieler/${player.id}`}>{player.name}</Link>)}</div></section>
+            <section><small>Übungen</small><div className="analysis-chip-list">{item.exercises.slice(0, 8).map((exercise) => <span key={exercise}>{exercise}</span>)}</div></section>
+          </div>
+          <div className="actions"><Link className="button secondary" href={item.detailHref}>Einheit öffnen</Link></div>
+        </article>)}
+      </div>
+      {data?.hasMore ? <div className="actions" style={{ justifyContent: "center", marginTop: 18 }}><button className="button secondary" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Lädt …" : "Weitere Einheiten laden"}</button></div> : null}
     </section>
   </main>;
 }
