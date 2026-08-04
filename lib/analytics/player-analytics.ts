@@ -14,11 +14,20 @@ type AnalyticsResult = {
   createdAt: Date;
 };
 
+export type PlayerTargetAnalytics = {
+  category: "CHECKOUT" | "DOUBLE" | "TREBLE" | "SINGLE" | "BULL";
+  targetKey: string;
+  attempts: number;
+  successes: number;
+  rate: number;
+};
+
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
 function numberValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -61,6 +70,64 @@ function checkoutRange(target: number) {
   if (target <= 100) return "81–100";
   if (target <= 130) return "101–130";
   return "131–170";
+}
+
+function normalizedTargetText(result: AnalyticsResult) {
+  return `${String(result.value.target ?? "")} ${result.exerciseName}`.toUpperCase()
+    .replace(/DOUBLE/g, "D")
+    .replace(/DOPPEL/g, "D")
+    .replace(/TRIPLE/g, "T")
+    .replace(/TREBLE/g, "T")
+    .replace(/SINGLE/g, "S")
+    .replace(/BULLSEYE|BULL'S EYE/g, "BULL")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function exactBoardTarget(result: AnalyticsResult): { category: PlayerTargetAnalytics["category"]; targetKey: string } | null {
+  const text = normalizedTargetText(result);
+  if (/\b(DBULL|D25|BULL)\b/.test(text)) return { category: "BULL", targetKey: "BULL" };
+  if (/\b(SBULL|S25)\b/.test(text)) return { category: "BULL", targetKey: "SBULL" };
+
+  const prefixed = text.match(/(?:^|\W)([DST])\s*(20|1[0-9]|[1-9])(?:\W|$)/);
+  if (prefixed) {
+    const prefix = prefixed[1];
+    const value = Number(prefixed[2]);
+    if (prefix === "D") return { category: "DOUBLE", targetKey: `D${value}` };
+    if (prefix === "T") return { category: "TREBLE", targetKey: `T${value}` };
+    return { category: "SINGLE", targetKey: `S${value}` };
+  }
+
+  if (["AROUND_DOUBLES", "DOUBLES_ROUNDS", "BOB27"].includes(result.engine)) {
+    const target = numberValue(result.value.target);
+    if (target != null && target >= 1 && target <= 20) return { category: "DOUBLE", targetKey: `D${target}` };
+  }
+  if (result.engine === "AROUND_TREBLES") {
+    const target = numberValue(result.value.target);
+    if (target != null && target >= 1 && target <= 20) return { category: "TREBLE", targetKey: `T${target}` };
+  }
+  if (result.engine === "AROUND_CLOCK") {
+    const target = numberValue(result.value.target);
+    if (target != null && target >= 1 && target <= 20) return { category: "SINGLE", targetKey: `S${target}` };
+  }
+  if (result.engine === "BULL_ROUNDS") return { category: "BULL", targetKey: "BULL" };
+  return null;
+}
+
+function addTargetStat(
+  map: Map<string, PlayerTargetAnalytics>,
+  category: PlayerTargetAnalytics["category"],
+  targetKey: string,
+  attempts: number,
+  successes: number,
+) {
+  if (attempts <= 0) return;
+  const key = `${category}:${targetKey}`;
+  const current = map.get(key) ?? { category, targetKey, attempts: 0, successes: 0, rate: 0 };
+  current.attempts += attempts;
+  current.successes += Math.max(0, Math.min(attempts, successes));
+  current.rate = current.attempts ? round(current.successes / current.attempts * 100, 1) : 0;
+  map.set(key, current);
 }
 
 export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
@@ -120,14 +187,31 @@ export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
   const first9Values = [...first9Groups.values()].map((group) => group.sort((a, b) => a.roundNumber - b.roundNumber).slice(0, 3).map(scoreOf).filter((value): value is number => value != null)).filter((group) => group.length === 3).map((group) => average(group));
 
   const checkoutRanges = new Map<string, { attempts: number; successes: number }>();
+  const targetStatistics = new Map<string, PlayerTargetAnalytics>();
+
   for (const item of checkoutResults) {
     const target = targetOf(item.result);
-    if (target == null || target < 40 || target > 170) continue;
-    const key = checkoutRange(target);
-    const current = checkoutRanges.get(key) ?? { attempts: 0, successes: 0 };
-    current.attempts += 1;
-    if (item.success) current.successes += 1;
-    checkoutRanges.set(key, current);
+    if (target == null || target < 2 || target > 170) continue;
+    addTargetStat(targetStatistics, "CHECKOUT", String(Math.trunc(target)), 1, item.success ? 1 : 0);
+    if (target >= 40) {
+      const key = checkoutRange(target);
+      const current = checkoutRanges.get(key) ?? { attempts: 0, successes: 0 };
+      current.attempts += 1;
+      if (item.success) current.successes += 1;
+      checkoutRanges.set(key, current);
+    }
+  }
+
+  for (const result of results) {
+    const boardTarget = exactBoardTarget(result);
+    if (!boardTarget) continue;
+    const hits = hitsOf(result);
+    if (hits) {
+      addTargetStat(targetStatistics, boardTarget.category, boardTarget.targetKey, hits.darts, hits.hits);
+      continue;
+    }
+    const success = checkoutOf(result);
+    if (success != null) addTargetStat(targetStatistics, boardTarget.category, boardTarget.targetKey, 1, success ? 1 : 0);
   }
 
   const engines = new Map<string, number>();
@@ -174,6 +258,7 @@ export async function buildPlayerAnalytics(playerId: number, periodDays = 90) {
       zeroVisits: scores.filter((score) => score === 0).length,
     },
     checkoutRanges: [...checkoutRanges.entries()].map(([range, item]) => ({ range, ...item, rate: item.attempts ? round(item.successes / item.attempts * 100, 1) : 0 })),
+    targetStatistics: [...targetStatistics.values()].sort((a, b) => a.category.localeCompare(b.category) || a.targetKey.localeCompare(b.targetKey, undefined, { numeric: true })),
     engineDistribution: [...engines.entries()].map(([engine, count]) => ({ engine, count })).sort((a, b) => b.count - a.count),
     trend: [...daily.entries()].map(([date, values]) => ({ date, average: round(average(values)), visits: values.length })).slice(-30),
   };
