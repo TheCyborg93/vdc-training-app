@@ -3,6 +3,7 @@ import { z } from "zod";
 const planItemSchema = z.object({
   exerciseId: z.coerce.number().int().positive(),
   durationMin: z.coerce.number().int().min(1).max(240),
+  settingsJson: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const trainingPlanInputSchema = z.object({
