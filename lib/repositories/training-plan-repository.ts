@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { TrainingPlanInput } from "@/lib/validators/training-plan";
 
@@ -7,7 +8,12 @@ const planInclude = {
 };
 
 function planItems(input: TrainingPlanInput) {
-  return input.items.map((item, index) => ({ ...item, position: index + 1 }));
+  return input.items.map((item, index) => ({
+    exerciseId: item.exerciseId,
+    durationMin: item.durationMin,
+    position: index + 1,
+    settingsJson: item.settingsJson as Prisma.InputJsonValue | undefined,
+  }));
 }
 
 export function findTrainingPlans() {
