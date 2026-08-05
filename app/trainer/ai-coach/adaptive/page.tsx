@@ -49,7 +49,12 @@ export default function AdaptiveCoachPage() {
   const [data, setData] = useState<AdaptiveResponse | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [savedPlanId, setSavedPlanId] = useState<number | null>(null);
+  const [planTitle, setPlanTitle] = useState("");
+  const [planGoal, setPlanGoal] = useState("");
 
   useEffect(() => {
     fetch("/api/players", { cache: "no-store" })
@@ -66,16 +71,62 @@ export default function AdaptiveCoachPage() {
     if (!playerId) return;
     setLoading(true);
     setError("");
+    setSaveMessage("");
+    setSavedPlanId(null);
     try {
       const response = await fetch(`/api/trainer/ai-coach/adaptive?playerId=${playerId}&durationMin=${durationMin}`, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Plan konnte nicht erstellt werden.");
       setData(payload);
       setBlocks(payload.session.blocks ?? []);
+      setPlanTitle(`Adaptiv · ${payload.player.name} · ${durationMin} Min.`);
+      setPlanGoal((payload.session.focusAreas ?? []).join(" & ") || "Individuelle Entwicklung");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Plan konnte nicht erstellt werden.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveAsTrainingPlan() {
+    if (!data || !blocks.length) return;
+    setSaving(true);
+    setError("");
+    setSaveMessage("");
+    try {
+      const response = await fetch("/api/training-plans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: planTitle,
+          goal: planGoal,
+          durationMin: totalMinutes,
+          items: blocks.map((block) => ({
+            exerciseId: block.exerciseId,
+            durationMin: block.durationMin,
+            settingsJson: {
+              source: "ADAPTIVE_COACH",
+              playerId: data.player.id,
+              playerName: data.player.name,
+              area: block.area,
+              difficultyLevel: block.difficultyLevel,
+              intensityLevel: block.intensityLevel,
+              coachReason: block.reason,
+              coachConfidence: data.session.confidence,
+              workload: data.session.workload,
+              configuration: block.configuration,
+            },
+          })),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Trainingsplan konnte nicht gespeichert werden.");
+      setSavedPlanId(payload.id);
+      setSaveMessage("Der adaptive Trainingsplan wurde als Entwurf gespeichert.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Trainingsplan konnte nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -88,10 +139,14 @@ export default function AdaptiveCoachPage() {
 
   function changeDuration(index: number, next: number) {
     setBlocks((current) => current.map((block, blockIndex) => blockIndex === index ? { ...block, durationMin: Math.max(5, next) } : block));
+    setSavedPlanId(null);
+    setSaveMessage("");
   }
 
   function removeBlock(index: number) {
     setBlocks((current) => current.filter((_, blockIndex) => blockIndex !== index).map((block, blockIndex) => ({ ...block, position: blockIndex + 1 })));
+    setSavedPlanId(null);
+    setSaveMessage("");
   }
 
   function moveBlock(index: number, direction: -1 | 1) {
@@ -102,6 +157,8 @@ export default function AdaptiveCoachPage() {
       [copy[index], copy[target]] = [copy[target], copy[index]];
       return copy.map((block, blockIndex) => ({ ...block, position: blockIndex + 1 }));
     });
+    setSavedPlanId(null);
+    setSaveMessage("");
   }
 
   return <main className="dashboard-page analysis-page">
@@ -145,6 +202,16 @@ export default function AdaptiveCoachPage() {
         <div className="section-heading"><div><span className="eyebrow">Coach-Begründung</span><h2>Warum dieser Plan?</h2></div></div>
         <p>{data.session.explanation}</p>
         <div className="analysis-chip-list">{data.session.focusAreas.map((area) => <span key={area}>{area}</span>)}</div>
+      </section>
+
+      <section className="card">
+        <div className="section-heading"><div><span className="eyebrow">Als Entwurf speichern</span><h2>Trainingsplan übernehmen</h2></div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(240px,2fr) minmax(220px,1fr) auto", gap: 12, alignItems: "end" }}>
+          <label>Planname<input value={planTitle} maxLength={120} onChange={(event) => setPlanTitle(event.target.value)} /></label>
+          <label>Trainingsziel<input value={planGoal} maxLength={80} onChange={(event) => setPlanGoal(event.target.value)} /></label>
+          <button className="button" type="button" onClick={() => void saveAsTrainingPlan()} disabled={saving || !blocks.length || planTitle.trim().length < 2 || planGoal.trim().length < 2}>{saving ? "Wird gespeichert …" : "Als Trainingsplan speichern"}</button>
+        </div>
+        {saveMessage ? <p style={{ marginTop: 16 }}>{saveMessage} {savedPlanId ? <Link href={`/trainer/trainingsplaene/${savedPlanId}`}>Entwurf öffnen →</Link> : null}</p> : null}
       </section>
 
       <section className="card">
