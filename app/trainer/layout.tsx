@@ -4,6 +4,7 @@ import { getAuthenticatedTrainer } from "@/lib/auth/trainer";
 import TrainerNavigation from "@/components/trainer/TrainerNavigation";
 import "../vdc-phase6-dashboard.css";
 import "../vdc-trainer-navigation.css";
+import "../vdc-phase7-trainer-ui.css";
 
 export const dynamic = "force-dynamic";
 
