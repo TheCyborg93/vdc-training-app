@@ -13,7 +13,17 @@ export type ExerciseCatalogSyncResult = {
 
 const catalogNote = (catalogNumber: number) => `Katalogübung #${String(catalogNumber).padStart(3, "0")}`;
 
+function isCatch40(item: (typeof exerciseCatalog100)[number]) {
+  return /^catch\s*40\b/i.test(item.name.trim());
+}
+
 function exerciseData(item: (typeof exerciseCatalog100)[number]) {
+  const catch40 = isCatch40(item);
+  const resultConfig = {
+    ...(item.resultConfigJson ?? {}),
+    ...(catch40 ? { engineType: "CATCH_40" } : {}),
+  };
+
   return {
     name: item.name,
     shortDescription: item.shortDescription,
@@ -28,11 +38,11 @@ function exerciseData(item: (typeof exerciseCatalog100)[number]) {
     intensity: item.intensity,
     funFactor: item.funFactor,
     learningCurve: item.learningCurve,
-    resultType: item.resultType,
-    engine: item.engine,
+    resultType: catch40 ? "SCORE_0_TO_180" as const : item.resultType,
+    engine: catch40 ? "CATCH_40" as const : item.engine,
     completionMode: item.completionMode,
     completionValue: item.completionValue ?? null,
-    resultConfigJson: item.resultConfigJson as Prisma.InputJsonValue,
+    resultConfigJson: resultConfig as Prisma.InputJsonValue,
     tagsJson: item.tags as Prisma.InputJsonValue,
     variantsJson: [] as Prisma.InputJsonValue,
     favorite: item.favorite ?? false,
