@@ -30,10 +30,9 @@ function number(value: number | null, digits = 1) {
 }
 
 function Delta({ value, suffix = "" }: { value: number | null; suffix?: string }) {
-  if (value == null) return <small style={{ color: "#a7afb8" }}>–</small>;
-  const positive = value > 0;
-  const negative = value < 0;
-  return <small style={{ color: positive ? "#22c55e" : negative ? "#ef4444" : "#a7afb8" }}>{positive ? "+" : ""}{number(value)}{suffix}</small>;
+  if (value == null) return <small className="analysis-delta is-neutral">–</small>;
+  const tone = value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
+  return <small className={`analysis-delta is-${tone}`}>{value > 0 ? "+" : ""}{number(value)}{suffix}</small>;
 }
 
 export default function TrainingComparisonPage() {
@@ -108,23 +107,26 @@ export default function TrainingComparisonPage() {
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Auswahl</span><h2>Vergleichseinheiten</h2></div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(240px,1fr))", gap: 16 }}>
+      <div className="analysis-form-grid is-two">
         <label>Einheit A<select value={leftKey} onChange={(event) => setLeftKey(event.target.value)}>{items.map((item) => <option key={`left-${item.id}`} value={item.id}>{new Date(item.startedAt).toLocaleDateString("de-DE")} · {item.type === "CLUB" ? "Verein" : "Zuhause"} · {item.title}</option>)}</select></label>
         <label>Einheit B<select value={rightKey} onChange={(event) => setRightKey(event.target.value)}>{items.map((item) => <option key={`right-${item.id}`} value={item.id}>{new Date(item.startedAt).toLocaleDateString("de-DE")} · {item.type === "CLUB" ? "Verein" : "Zuhause"} · {item.title}</option>)}</select></label>
       </div>
     </section>
 
-    {error ? <section className="analysis-empty"><strong>Vergleich nicht verfügbar</strong><p>{error}</p></section> : null}
+    {error ? <section className="analysis-message is-error"><strong>Vergleich nicht verfügbar</strong><p>{error}</p></section> : null}
     {loading && (!left || !right) ? <section className="card"><p>Trainingseinheiten werden verglichen …</p></section> : null}
 
     {left && right ? <>
       <section className="coach-analysis-grid">
-        {[left, right].map((detail, index) => <article className="card" key={`${detail.type}:${detail.id}`}><span className="eyebrow">Einheit {index === 0 ? "A" : "B"}</span><h2>{detail.title}</h2><p>{detail.goal}</p><small>{new Date(detail.startedAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })} · {detail.type === "CLUB" ? "Verein" : "Zuhause"}</small><div className="analysis-chip-list" style={{ marginTop: 12 }}>{detail.players.map((player) => <Link key={player.id} href={`/trainer/spieler/${player.id}`}>{player.name}</Link>)}</div><Link className="button secondary" href={`/trainer/archiv/${detail.type.toLowerCase()}/${detail.id}`}>Details öffnen</Link></article>)}
+        {[left, right].map((detail, index) => <article className="card" key={`${detail.type}:${detail.id}`}>
+          <span className="eyebrow">Einheit {index === 0 ? "A" : "B"}</span><h2>{detail.title}</h2><p>{detail.goal}</p><small>{new Date(detail.startedAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })} · {detail.type === "CLUB" ? "Verein" : "Zuhause"}</small>
+          <div className="analysis-card-footer"><div className="analysis-chip-list">{detail.players.map((player) => <Link key={player.id} href={`/trainer/spieler/${player.id}`}>{player.name}</Link>)}</div><Link className="button secondary" href={`/trainer/archiv/${detail.type.toLowerCase()}/${detail.id}`}>Details öffnen</Link></div>
+        </article>)}
       </section>
 
       <section className="card">
         <div className="section-heading"><div><span className="eyebrow">Kennzahlen</span><h2>Direkter Vergleich</h2></div></div>
-        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}><thead><tr><th>Kennzahl</th><th>Einheit A</th><th>Einheit B</th><th>Differenz A–B</th></tr></thead><tbody>{metrics.map((item) => <tr key={item.label}><td><strong>{item.label}</strong></td><td>{number(item.left)}{item.suffix}</td><td>{number(item.right)}{item.suffix}</td><td><Delta value={item.delta == null ? null : Math.round(item.delta * 100) / 100} suffix={item.suffix} /></td></tr>)}</tbody></table></div>
+        <div className="analysis-scroll"><table className="analysis-table"><thead><tr><th>Kennzahl</th><th>Einheit A</th><th>Einheit B</th><th>Differenz A–B</th></tr></thead><tbody>{metrics.map((item) => <tr key={item.label}><td><strong>{item.label}</strong></td><td>{number(item.left)}{item.suffix}</td><td>{number(item.right)}{item.suffix}</td><td><Delta value={item.delta == null ? null : Math.round(item.delta * 100) / 100} suffix={item.suffix} /></td></tr>)}</tbody></table></div>
       </section>
 
       <section className="card">
