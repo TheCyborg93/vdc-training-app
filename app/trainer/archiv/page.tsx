@@ -92,7 +92,7 @@ export default function TrainingArchivePage() {
   return <main className="dashboard-page analysis-page">
     <section className="dashboard-heading analysis-heading">
       <div><div className="eyebrow">Phase 7.2 · Trainingshistorie</div><h1>Trainingshistorie</h1><p>Vereins- und Heimtraining gemeinsam durchsuchen, vergleichen und bis zur einzelnen Einheit nachvollziehen.</p></div>
-      <div className="analysis-heading-actions"><Link className="button secondary" href="/trainer/spieler/vergleich">Vereinsvergleich</Link><Link className="button" href="/trainer/trainingsplaene">Trainingspläne</Link></div>
+      <div className="analysis-heading-actions"><Link className="button secondary" href="/trainer/archiv/vergleich">Einheiten vergleichen</Link><Link className="button" href="/trainer/trainingsplaene">Trainingspläne</Link></div>
     </section>
 
     <section className="analysis-kpis">
@@ -105,7 +105,7 @@ export default function TrainingArchivePage() {
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Filter</span><h2>Schnell zur gesuchten Einheit</h2></div><span className="analysis-count">{data?.total ?? 0} Treffer</span></div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,2fr) repeat(3,minmax(150px,1fr))", gap: 12 }}>
+      <div className="analysis-form-grid">
         <label>Suche<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Training, Ziel, Übung oder Spieler" /></label>
         <label>Trainingstyp<select value={type} onChange={(event) => setType(event.target.value)}><option value="">Alle</option><option value="CLUB">Verein</option><option value="HOME">Zuhause</option></select></label>
         <label>Spieler<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}><option value="">Alle Spieler</option>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label>
@@ -140,7 +140,7 @@ export default function TrainingArchivePage() {
           <div className="actions"><Link className="button secondary" href={item.detailHref}>Einheit öffnen</Link></div>
         </article>)}
       </div>
-      {data?.hasMore ? <div className="actions" style={{ justifyContent: "center", marginTop: 18 }}><button className="button secondary" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Lädt …" : "Weitere Einheiten laden"}</button></div> : null}
+      {data?.hasMore ? <div className="actions analysis-actions-centered"><button className="button secondary" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Lädt …" : "Weitere Einheiten laden"}</button></div> : null}
     </section>
   </main>;
 }
