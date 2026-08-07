@@ -62,13 +62,13 @@ export default function TrainingHistoryDetailPage() {
     return true;
   }), [detail?.results, exerciseId, playerId]);
 
-  if (loading) return <main className="dashboard-page"><section className="card"><p>Trainingseinheit wird geladen …</p></section></main>;
-  if (error || !detail) return <main className="dashboard-page"><section className="card"><h1>Training nicht verfügbar</h1><p>{error || "Einheit nicht gefunden."}</p><Link className="button secondary" href="/trainer/archiv">Zur Historie</Link></section></main>;
+  if (loading) return <main className="dashboard-page analysis-page"><section className="card"><p>Trainingseinheit wird geladen …</p></section></main>;
+  if (error || !detail) return <main className="dashboard-page analysis-page"><section className="analysis-message is-error"><strong>Training nicht verfügbar</strong><p>{error || "Einheit nicht gefunden."}</p><Link className="button secondary" href="/trainer/archiv">Zur Historie</Link></section></main>;
 
   return <main className="dashboard-page analysis-page">
     <section className="dashboard-heading analysis-heading">
       <div><div className="eyebrow">Phase 7.2 · {detail.type === "CLUB" ? "Vereinstraining" : "Heimtraining"}</div><h1>{detail.title}</h1><p>{detail.goal} · {new Date(detail.startedAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" })}</p></div>
-      <div className="analysis-heading-actions"><Link className="button secondary" href="/trainer/archiv">Zur Historie</Link>{detail.players[0] ? <Link className="button" href={`/trainer/spieler/${detail.players[0].id}`}>Spieleranalyse</Link> : null}</div>
+      <div className="analysis-heading-actions"><Link className="button secondary" href="/trainer/archiv">Zur Historie</Link><Link className="button secondary" href={`/trainer/archiv/vergleich?left=${detail.type.toLowerCase()}:${detail.id}`}>Vergleichen</Link>{detail.players[0] ? <Link className="button" href={`/trainer/spieler/${detail.players[0].id}`}>Spieleranalyse</Link> : null}</div>
     </section>
 
     <section className="analysis-kpis">
@@ -91,11 +91,11 @@ export default function TrainingHistoryDetailPage() {
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Aufnahmen</span><h2>Chronologisches Ergebnisprotokoll</h2></div><span className="analysis-count">{results.length} Einträge</span></div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(180px,1fr))", gap: 12, marginBottom: 18 }}>
+      <div className="analysis-form-grid is-two">
         <label>Spieler<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}><option value="">Alle Spieler</option>{detail.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>
         <label>Übung<select value={exerciseId} onChange={(event) => setExerciseId(event.target.value)}><option value="">Alle Übungen</option>{detail.exercises.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>
       </div>
-      {results.length ? <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}><thead><tr><th>Zeit</th><th>Spieler</th><th>Board</th><th>Übung</th><th>Runde</th><th>Score</th><th>Details</th></tr></thead><tbody>{results.map((result) => <tr key={`${result.boardSessionId}:${result.id}`}><td>{new Date(result.createdAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td><td><Link href={`/trainer/spieler/${result.playerId}`}>{result.playerName}</Link></td><td>{result.board}</td><td>{result.exerciseName}</td><td>{result.roundNumber}</td><td><strong>{result.score ?? "–"}</strong></td><td><small>{valuePreview(result.value)}</small></td></tr>)}</tbody></table></div> : <p>Für die gewählten Filter sind keine Aufnahmen vorhanden.</p>}
+      {results.length ? <div className="analysis-scroll"><table className="analysis-table is-wide"><thead><tr><th>Zeit</th><th>Spieler</th><th>Board</th><th>Übung</th><th>Runde</th><th>Score</th><th>Details</th></tr></thead><tbody>{results.map((result) => <tr key={`${result.boardSessionId}:${result.id}`}><td>{new Date(result.createdAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td><td><Link href={`/trainer/spieler/${result.playerId}`}>{result.playerName}</Link></td><td>{result.board}</td><td>{result.exerciseName}</td><td>{result.roundNumber}</td><td><strong>{result.score ?? "–"}</strong></td><td><small>{valuePreview(result.value)}</small></td></tr>)}</tbody></table></div> : <div className="analysis-empty"><strong>Keine Aufnahmen</strong><p>Für die gewählten Filter sind keine Ergebnisse vorhanden.</p></div>}
     </section>
   </main>;
 }
