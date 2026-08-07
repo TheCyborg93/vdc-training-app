@@ -17,6 +17,16 @@ export type EngineDefinition = {
   coachSignals?: string[];
 };
 
+export type Catch40ScoreResult = {
+  score: number;
+  target: number;
+  dartsAllowed: 6 | 9;
+  remaining: number;
+  checkout: boolean;
+  bust: boolean;
+  reachedTarget: boolean;
+};
+
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -29,6 +39,25 @@ function finiteNumber(value: unknown, fallback: number): number {
 export function catch40DartLimit(targetValue: unknown): 6 | 9 {
   const target = Math.trunc(finiteNumber(targetValue, 40));
   return target >= 91 ? 9 : 6;
+}
+
+export function analyzeCatch40Score(targetValue: unknown, scoreValue: unknown): Catch40ScoreResult {
+  const target = Math.max(40, Math.min(170, Math.trunc(finiteNumber(targetValue, 40))));
+  const dartsAllowed = catch40DartLimit(target);
+  const maxScore = dartsAllowed * 60;
+  const score = Math.max(0, Math.min(maxScore, Math.trunc(finiteNumber(scoreValue, 0))));
+  const checkout = score === target;
+  const bust = score > target;
+
+  return {
+    score,
+    target,
+    dartsAllowed,
+    remaining: checkout || bust ? 0 : target - score,
+    checkout,
+    bust,
+    reachedTarget: checkout,
+  };
 }
 
 export function engineDefinition(kind: string, configValue?: unknown): EngineDefinition {
@@ -74,15 +103,10 @@ export function normalizeEngineVisit(kind: string, configValue: unknown, rawValu
     return { single, double, triple, hits: single + double + triple };
   }
   if (kind === "CATCH_40") {
-    const target = clamp(raw.target ?? config.target ?? config.startTarget, 40, 170);
-    const dartsAllowed = catch40DartLimit(target);
-    const maxScore = dartsAllowed * 60;
-    return {
-      score: clamp(raw.score ?? raw.value, 0, maxScore),
-      target,
-      dartsAllowed,
-      reachedTarget: clamp(raw.score ?? raw.value, 0, maxScore) >= target,
-    };
+    return analyzeCatch40Score(
+      raw.target ?? config.target ?? config.startTarget,
+      raw.score ?? raw.value,
+    );
   }
   if (definition.inputMode === "SCORE") return { score: clamp(raw.score ?? raw.value, definition.minScore ?? 0, definition.maxScore ?? 180), finish: raw.finish === true };
   if (definition.inputMode === "X01") return {
