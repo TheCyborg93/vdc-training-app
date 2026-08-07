@@ -69,6 +69,10 @@ function dartCount(raw: Record<string, unknown>, fallback = 3) {
   return Math.max(1, Math.min(9, integer(raw.dartsUsed ?? raw.dartsThrown, fallback)));
 }
 
+function catch40Darts(target: unknown): 6 | 9 {
+  return integer(target, 40) >= 91 ? 9 : 6;
+}
+
 function segmentCounts(raw: Record<string, unknown>, dartsPerVisit = 3) {
   const single = Math.max(0, Math.min(dartsPerVisit, integer(raw.single)));
   const double = Math.max(0, Math.min(dartsPerVisit - single, integer(raw.double)));
@@ -96,11 +100,12 @@ function targetSegmentScore(target: unknown, single: number, double: number, tri
 }
 
 export function detectExerciseKind(exercise: ExerciseDefinition): string {
-  const configured = String(configOf(exercise).engineType ?? "").trim();
-  if (configured) return configured;
   const value = text(exercise);
   if (/121\s*(in|mit)?\s*9|121.*9\s*darts|121.*neun/.test(value)) return "GAME_121";
   if (exercise.engine && exercise.engine !== "AUTO" && exercise.engine !== "CUSTOM") return exercise.engine;
+  const configured = String(configOf(exercise).engineType ?? "").trim();
+  if (configured) return configured;
+  if (/catch\s*40|catch40/.test(value)) return "CATCH_40";
   if (/bob.?s?\s*27|bob27/.test(value)) return "BOB27";
   if (/around the clock|around the world|rund um die uhr/.test(value)) return /doppel|double/.test(value) ? "AROUND_DOUBLES" : /triple|treble/.test(value) ? "AROUND_TREBLES" : "AROUND_CLOCK";
   if (/shanghai/.test(value)) return "SHANGHAI";
@@ -139,6 +144,10 @@ export function createInitialExerciseState(exercise: ExerciseDefinition): Player
   }
   if (kind === "SHANGHAI" || kind === "SHANGHAI_CONFIGURED") return { ...common, score: 0, targetIndex: 0, target: targetLabel(targets[0] ?? 1) };
   if (kind === "JDC_CHALLENGE") return { ...common, score: 0, targetIndex: 0, target: "Bob's 27", phase: "BOB27" };
+  if (kind === "CATCH_40") {
+    const firstTarget = Math.max(40, Math.min(170, integer(targets[0] ?? engineConfig.target ?? engineConfig.startTarget, 40)));
+    return { ...common, score: 0, targetIndex: 0, target: String(firstTarget), attempts: 0, successes: 0, attemptDarts: 0 };
+  }
   if (kind === "GAME_121") {
     const startTarget = number(engineConfig.startTarget, 121);
     return { ...common, score: startTarget, target: String(startTarget), baseTarget: startTarget, attemptDarts: 0, attempts: 0, successes: 0, highestTarget: startTarget, firstVisitFinishes: 0 };
@@ -215,6 +224,44 @@ export function applyVisit(exercise: ExerciseDefinition, state: PlayerExerciseSt
     const completed = targetIndex >= sequence.length;
     Object.assign(next, { score: (state.score ?? 0) + visitScore, hits: (state.hits ?? 0) + hits, targetIndex, target: completed ? "Fertig" : targetLabel(sequence[targetIndex]), completed, dartsThrown: (state.dartsThrown ?? 0) + dartsPerVisit });
     return result(exercise, next, { ...visitValue, single, double, triple, hits, visitScore }, visitScore);
+  }
+
+  if (state.kind === "CATCH_40") {
+    const sequence = targets.length ? targets : [config.target ?? config.startTarget ?? state.target ?? 40];
+    const currentIndex = state.targetIndex ?? 0;
+    const currentTarget = Math.max(40, Math.min(170, integer(sequence[currentIndex] ?? state.target, 40)));
+    const dartsAllowed = catch40Darts(currentTarget);
+    const maxScore = dartsAllowed * 60;
+    const scored = Math.max(0, Math.min(maxScore, integer(raw.score ?? raw.value)));
+    const rawRemaining = currentTarget - scored;
+    const bust = rawRemaining < 0;
+    const remaining = bust ? currentTarget : rawRemaining;
+    const checkout = !bust && remaining === 0;
+    const targetIndex = currentIndex + 1;
+    const completed = targetIndex >= sequence.length;
+    const nextTarget = completed ? "Fertig" : targetLabel(sequence[targetIndex]);
+    Object.assign(next, {
+      score: scored,
+      targetIndex,
+      target: nextTarget,
+      attempts: (state.attempts ?? 0) + 1,
+      successes: (state.successes ?? 0) + (checkout ? 1 : 0),
+      attemptDarts: 0,
+      dartsThrown: (state.dartsThrown ?? 0) + dartsAllowed,
+      completed,
+    });
+    return result(exercise, next, {
+      ...visitValue,
+      score: scored,
+      scored,
+      target: currentTarget,
+      dartsAllowed,
+      remaining,
+      checkout,
+      bust,
+      reachedTarget: checkout,
+      targetAfter: nextTarget,
+    }, scored);
   }
 
   if (state.kind === "GAME_121") {
