@@ -73,7 +73,7 @@ function trendLabel(value: number | null | undefined, percent = false) {
 
 function Trend({ value, percent = false }: { value: number | null | undefined; percent?: boolean }) {
   const trend = trendLabel(value, percent);
-  return <span className={`analytics-trend is-${trend.tone}`}>{trend.text}</span>;
+  return <span className={`analysis-trend is-${trend.tone}`}>{trend.text}</span>;
 }
 
 export default function PlayerComparisonPage() {
@@ -102,73 +102,54 @@ export default function PlayerComparisonPage() {
   const players = useMemo(() => [...(data?.players ?? [])].sort((a, b) => b[sortMetric] - a[sortMetric] || b.results - a.results), [data?.players, sortMetric]);
   const maxValue = Math.max(1, ...players.map((player) => player[sortMetric]));
 
-  return <main className="dashboard-page player-profile-v3">
-    <section className="dashboard-heading">
+  return <main className="dashboard-page analysis-page player-profile-v3">
+    <section className="dashboard-heading analysis-heading">
       <div>
         <div className="eyebrow">Phase 7.1 · Vereinsanalyse</div>
         <h1>Spielervergleich</h1>
         <p>Aktueller Zeitraum {dateLabel(data?.windows.current.start)}–{dateLabel(data?.windows.current.end)} im Vergleich zu {dateLabel(data?.windows.previous.start)}–{dateLabel(data?.windows.previous.end)}.</p>
       </div>
-      <div className="actions">
-        <select value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))} aria-label="Analysezeitraum">
-          <option value={30}>30 Tage</option><option value={90}>90 Tage</option><option value={180}>180 Tage</option><option value={365}>365 Tage</option>
-        </select>
-        <select value={sortMetric} onChange={(event) => setSortMetric(event.target.value as SortMetric)} aria-label="Sortierung">
-          {Object.entries(metricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
+      <div className="analysis-toolbar">
+        <label>Zeitraum<select value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))} aria-label="Analysezeitraum"><option value={30}>30 Tage</option><option value={90}>90 Tage</option><option value={180}>180 Tage</option><option value={365}>365 Tage</option></select></label>
+        <label>Sortierung<select value={sortMetric} onChange={(event) => setSortMetric(event.target.value as SortMetric)} aria-label="Sortierung">{Object.entries(metricLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         <Link className="button secondary" href="/trainer/spieler">Spieler verwalten</Link>
       </div>
     </section>
 
-    {error ? <section className="card"><h2>Vergleich nicht verfügbar</h2><p>{error}</p></section> : null}
+    {error ? <section className="analysis-message is-error"><strong>Vergleich nicht verfügbar</strong><p>{error}</p></section> : null}
 
-    <section className="coach-overview-grid">
-      <article className="card"><small>Aktive Spieler</small><strong>{data?.overview.players ?? 0}</strong><span>{data?.overview.analyzedPlayers ?? 0} mit Daten</span></article>
-      <article className="card"><small>Vereins-Average</small><strong>{data?.overview.average ?? 0}</strong><Trend value={data?.overview.trend.average} /></article>
-      <article className="card"><small>Vereins-First 9</small><strong>{data?.overview.first9 ?? 0}</strong><Trend value={data?.overview.trend.first9} /></article>
-      <article className="card"><small>Checkoutquote</small><strong>{data?.overview.checkoutRate ?? 0} %</strong><Trend value={data?.overview.trend.checkoutRate} percent /></article>
-      <article className="card"><small>Trefferquote</small><strong>{data?.overview.hitRate ?? 0} %</strong><Trend value={data?.overview.trend.hitRate} percent /></article>
-      <article className="card"><small>Vergleichsbasis</small><strong>{data?.overview.playersWithComparison ?? 0}</strong><span>Spieler mit Daten in beiden Zeiträumen</span></article>
+    <section className="analysis-kpis">
+      <article><small>Aktive Spieler</small><strong>{data?.overview.players ?? 0}</strong><span>{data?.overview.analyzedPlayers ?? 0} mit Daten</span></article>
+      <article><small>Vereins-Average</small><strong>{data?.overview.average ?? 0}</strong><Trend value={data?.overview.trend.average} /></article>
+      <article><small>Vereins-First 9</small><strong>{data?.overview.first9 ?? 0}</strong><Trend value={data?.overview.trend.first9} /></article>
+      <article><small>Checkoutquote</small><strong>{data?.overview.checkoutRate ?? 0} %</strong><Trend value={data?.overview.trend.checkoutRate} percent /></article>
+      <article><small>Trefferquote</small><strong>{data?.overview.hitRate ?? 0} %</strong><Trend value={data?.overview.trend.hitRate} percent /></article>
+      <article><small>Vergleichsbasis</small><strong>{data?.overview.playersWithComparison ?? 0}</strong><span>Spieler mit Daten in beiden Zeiträumen</span></article>
     </section>
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Rangliste</span><h2>Sortiert nach {metricLabels[sortMetric]}</h2></div></div>
       {loading ? <p>Vereinsanalyse wird berechnet …</p> : players.length ? <div className="coach-area-list">
         {players.map((player, index) => <div className="coach-area-row" key={player.playerId}>
-          <div>
-            <strong>#{index + 1} · {player.playerName}</strong>
-            <small>{player.results} Aufnahmen · {player.activeDays} Trainingstage · Datenlage {player.dataQuality === "STRONG" ? "stark" : player.dataQuality === "MEDIUM" ? "mittel" : "gering"}</small>
-          </div>
+          <div><strong>#{index + 1} · {player.playerName}</strong><small>{player.results} Aufnahmen · {player.activeDays} Trainingstage · Datenlage {player.dataQuality === "STRONG" ? "stark" : player.dataQuality === "MEDIUM" ? "mittel" : "gering"}</small></div>
           <div className="coach-area-track"><i style={{ width: `${Math.max(2, player[sortMetric] / maxValue * 100)}%` }} /></div>
-          <div className="analytics-rank-value">
-            <b>{player[sortMetric]}{sortMetric === "checkoutRate" || sortMetric === "hitRate" ? " %" : ""}</b>
-            <Trend value={player.comparison[sortMetric]} percent={sortMetric === "checkoutRate" || sortMetric === "hitRate"} />
-          </div>
+          <div className="analysis-rank-value"><b>{player[sortMetric]}{sortMetric === "checkoutRate" || sortMetric === "hitRate" ? " %" : ""}</b><Trend value={player.comparison[sortMetric]} percent={sortMetric === "checkoutRate" || sortMetric === "hitRate"} /></div>
           <Link href={`/trainer/spieler/${player.playerId}`}>Profil</Link>
         </div>)}
-      </div> : <p>Noch keine Spieler mit auswertbaren Trainingsdaten vorhanden.</p>}
+      </div> : <div className="analysis-empty"><strong>Noch keine Vergleichsdaten</strong><p>Sobald genügend Trainingsdaten vorhanden sind, erscheint hier die Rangliste.</p></div>}
     </section>
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Detailvergleich</span><h2>Aktueller Wert und Entwicklung</h2></div></div>
-      <div style={{ overflowX: "auto" }}>
-        <table className="analytics-comparison-table">
-          <thead><tr><th>Spieler</th><th>AVG</th><th>First 9</th><th>Checkout</th><th>Treffer</th><th>MPR</th><th>Highscore</th><th>Nullaufnahmen</th></tr></thead>
-          <tbody>{players.map((player) => <tr key={player.playerId}>
-            <td><Link href={`/trainer/spieler/${player.playerId}`}>{player.playerName}</Link><small>{player.comparison.previousResults} frühere Aufnahmen</small></td>
-            <td><strong>{player.average}</strong><Trend value={player.comparison.average} /></td>
-            <td><strong>{player.first9}</strong><Trend value={player.comparison.first9} /></td>
-            <td><strong>{player.checkoutRate} %</strong><Trend value={player.comparison.checkoutRate} percent /></td>
-            <td><strong>{player.hitRate} %</strong><Trend value={player.comparison.hitRate} percent /></td>
-            <td><strong>{player.mpr}</strong><Trend value={player.comparison.mpr} /></td>
-            <td>{player.highScore}</td><td>{player.zeroVisits}</td>
-          </tr>)}</tbody>
-        </table>
-      </div>
+      <div className="analysis-scroll"><table className="analysis-table is-wide"><thead><tr><th>Spieler</th><th>AVG</th><th>First 9</th><th>Checkout</th><th>Treffer</th><th>MPR</th><th>Highscore</th><th>Nullaufnahmen</th></tr></thead><tbody>{players.map((player) => <tr key={player.playerId}>
+        <td><Link href={`/trainer/spieler/${player.playerId}`}>{player.playerName}</Link><small>{player.comparison.previousResults} frühere Aufnahmen</small></td>
+        <td><strong>{player.average}</strong><Trend value={player.comparison.average} /></td>
+        <td><strong>{player.first9}</strong><Trend value={player.comparison.first9} /></td>
+        <td><strong>{player.checkoutRate} %</strong><Trend value={player.comparison.checkoutRate} percent /></td>
+        <td><strong>{player.hitRate} %</strong><Trend value={player.comparison.hitRate} percent /></td>
+        <td><strong>{player.mpr}</strong><Trend value={player.comparison.mpr} /></td>
+        <td>{player.highScore}</td><td>{player.zeroVisits}</td>
+      </tr>)}</tbody></table></div>
     </section>
-
-    <style jsx>{`
-      .analytics-trend{display:inline-flex;align-items:center;font-size:.78rem;font-weight:800;margin-top:6px}.analytics-trend.is-positive{color:#22c55e}.analytics-trend.is-negative{color:#ef4444}.analytics-trend.is-neutral{color:#a7afb8}.analytics-rank-value{display:flex;flex-direction:column;align-items:flex-end;min-width:90px}.analytics-comparison-table{width:100%;border-collapse:collapse;min-width:1050px}.analytics-comparison-table th,.analytics-comparison-table td{text-align:left;padding:14px 12px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}.analytics-comparison-table td strong{display:block}.analytics-comparison-table td small{display:block;color:#a7afb8;margin-top:4px}
-    `}</style>
   </main>;
 }
