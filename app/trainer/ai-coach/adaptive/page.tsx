@@ -176,12 +176,12 @@ export default function AdaptiveCoachPage() {
 
     <section className="card">
       <div className="section-heading"><div><span className="eyebrow">Plan erstellen</span><h2>Spieler und Dauer auswählen</h2></div></div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,2fr) minmax(160px,1fr) auto", gap: 12, alignItems: "end" }}>
+      <div className="analysis-form-grid is-three">
         <label>Spieler<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}><option value="">Spieler wählen</option>{players.map((player) => <option key={player.id} value={player.id}>{player.displayName}</option>)}</select></label>
         <label>Dauer<select value={durationMin} onChange={(event) => setDurationMin(Number(event.target.value))}><option value={30}>30 Minuten</option><option value={45}>45 Minuten</option><option value={60}>60 Minuten</option><option value={90}>90 Minuten</option><option value={120}>120 Minuten</option><option value={150}>150 Minuten</option><option value={180}>180 Minuten</option></select></label>
         <button className="button" type="button" onClick={() => void generate()} disabled={!playerId || loading}>{loading ? "Wird berechnet …" : "Plan neu berechnen"}</button>
       </div>
-      {error ? <p style={{ color: "#ef4444", marginTop: 16 }}>{error}</p> : null}
+      {error ? <div className="analysis-message is-error" role="alert">{error}</div> : null}
     </section>
 
     {data ? <>
@@ -206,12 +206,12 @@ export default function AdaptiveCoachPage() {
 
       <section className="card">
         <div className="section-heading"><div><span className="eyebrow">Als Entwurf speichern</span><h2>Trainingsplan übernehmen</h2></div></div>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(240px,2fr) minmax(220px,1fr) auto", gap: 12, alignItems: "end" }}>
+        <div className="analysis-form-grid is-plan">
           <label>Planname<input value={planTitle} maxLength={120} onChange={(event) => setPlanTitle(event.target.value)} /></label>
           <label>Trainingsziel<input value={planGoal} maxLength={80} onChange={(event) => setPlanGoal(event.target.value)} /></label>
           <button className="button" type="button" onClick={() => void saveAsTrainingPlan()} disabled={saving || !blocks.length || planTitle.trim().length < 2 || planGoal.trim().length < 2}>{saving ? "Wird gespeichert …" : "Als Trainingsplan speichern"}</button>
         </div>
-        {saveMessage ? <p style={{ marginTop: 16 }}>{saveMessage} {savedPlanId ? <Link href={`/trainer/trainingsplaene/${savedPlanId}`}>Entwurf öffnen →</Link> : null}</p> : null}
+        {saveMessage ? <div className="analysis-message is-success">{saveMessage} {savedPlanId ? <Link href={`/trainer/trainingsplaene/${savedPlanId}`}>Entwurf öffnen →</Link> : null}</div> : null}
       </section>
 
       <section className="card">
@@ -226,7 +226,7 @@ export default function AdaptiveCoachPage() {
               <span><small>Bereich</small><strong>{block.area}</strong></span>
             </div>
             <p><small>{configurationLabel(block.configuration)}</small></p>
-            <div className="actions" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <div className="analysis-block-actions">
               <button className="button secondary" type="button" onClick={() => moveBlock(index, -1)} disabled={index === 0}>Nach oben</button>
               <button className="button secondary" type="button" onClick={() => moveBlock(index, 1)} disabled={index === blocks.length - 1}>Nach unten</button>
               <button className="button secondary" type="button" onClick={() => changeDuration(index, block.durationMin - 5)}>-5 Min.</button>
@@ -236,6 +236,6 @@ export default function AdaptiveCoachPage() {
           </article>)}
         </div>
       </section>
-    </> : <section className="card"><p>Wähle einen Spieler, um einen adaptiven Trainingsplan zu erzeugen.</p></section>}
+    </> : <section className="card"><div className="analysis-empty"><strong>Noch kein Plan geladen</strong><p>Wähle einen Spieler, um einen adaptiven Trainingsplan zu erzeugen.</p></div></section>}
   </main>;
 }
