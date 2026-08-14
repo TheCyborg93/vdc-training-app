@@ -97,10 +97,16 @@ export function normalizeEngineVisit(kind: string, configValue: unknown, rawValu
 
   if (definition.inputMode === "HITS") return { hits: clamp(raw.hits, 0, definition.dartsPerVisit) };
   if (definition.inputMode === "SEGMENTS") {
+    const segmentHits = Array.isArray(raw.segmentHits)
+      ? raw.segmentHits
+          .map((value) => String(value).toUpperCase())
+          .filter((value) => /^(?:D|T)(?:[1-9]|1\d|20)$/.test(value))
+          .slice(0, definition.dartsPerVisit)
+      : [];
     const single = clamp(raw.single, 0, definition.dartsPerVisit);
     const double = clamp(raw.double, 0, definition.dartsPerVisit - single);
     const triple = clamp(raw.triple, 0, definition.dartsPerVisit - single - double);
-    return { single, double, triple, hits: single + double + triple };
+    return { single, double, triple, hits: single + double + triple, ...(segmentHits.length ? { segmentHits } : {}) };
   }
   if (kind === "CATCH_40") {
     return analyzeCatch40Score(
