@@ -95,24 +95,52 @@ export function normalizeEngineVisit(kind: string, configValue: unknown, rawValu
   const definition = engineDefinition(kind, config);
   const clamp = (value: unknown, min: number, max: number) => Math.max(min, Math.min(max, Math.trunc(finiteNumber(value, min))));
 
+  if (kind === "COUNT_UP") {
+    return {
+      score: clamp(raw.score ?? raw.value, 0, 180),
+      opponentScore: clamp(raw.opponentScore, 0, Math.max(1, Math.trunc(finiteNumber(config.target, 301)))),
+      gotcha: raw.gotcha === true,
+      finish: raw.finish === true,
+    };
+  }
+
+  if (kind === "JDC_CHALLENGE") {
+    const bob27Score = Math.trunc(finiteNumber(raw.bob27Score, 0));
+    const shanghaiScore = Math.max(0, Math.trunc(finiteNumber(raw.shanghaiScore, 0)));
+    const aroundClockScore = Math.max(0, Math.trunc(finiteNumber(raw.aroundClockScore, 0)));
+    const jdcTotal = Math.trunc(finiteNumber(raw.jdcTotal ?? raw.score, bob27Score + shanghaiScore + aroundClockScore));
+    return {
+      bob27Score,
+      shanghaiScore,
+      aroundClockScore,
+      stages: raw.stages ?? { BOB27: bob27Score, SHANGHAI_10_15: shanghaiScore, AROUND_CLOCK: aroundClockScore },
+      score: jdcTotal,
+      jdcTotal,
+      finish: raw.finish === true,
+    };
+  }
+
   if (definition.inputMode === "HITS") return { hits: clamp(raw.hits, 0, definition.dartsPerVisit) };
   if (definition.inputMode === "SEGMENTS") {
-    const segmentHits = Array.isArray(raw.segmentHits)
-      ? raw.segmentHits
-          .map((value) => String(value).toUpperCase())
-          .filter((value) => /^(?:D|T)(?:[1-9]|1\d|20)$/.test(value))
-          .slice(0, definition.dartsPerVisit)
-      : [];
+    const sourceSegments = Array.isArray(raw.hitSegments) ? raw.hitSegments : Array.isArray(raw.segmentHits) ? raw.segmentHits : [];
+    const segmentHits = sourceSegments
+      .map((value) => String(value ?? "").trim().toUpperCase())
+      .filter((value) => /^(?:D(?:[1-9]|1\d|20)|T(?:[1-9]|1\d|20)|DBULL)$/.test(value))
+      .slice(0, definition.dartsPerVisit);
     const single = clamp(raw.single, 0, definition.dartsPerVisit);
     const double = clamp(raw.double, 0, definition.dartsPerVisit - single);
     const triple = clamp(raw.triple, 0, definition.dartsPerVisit - single - double);
-    return { single, double, triple, hits: single + double + triple, ...(segmentHits.length ? { segmentHits } : {}) };
+    const hits = segmentHits.length || single + double + triple;
+    return {
+      single,
+      double,
+      triple,
+      hits,
+      ...(segmentHits.length ? { segmentHits, hitSegments: segmentHits, visitScore: Math.max(0, Math.trunc(finiteNumber(raw.visitScore, 0))) } : {}),
+    };
   }
   if (kind === "CATCH_40") {
-    return analyzeCatch40Score(
-      raw.target ?? config.target ?? config.startTarget,
-      raw.score ?? raw.value,
-    );
+    return analyzeCatch40Score(raw.target ?? config.target ?? config.startTarget, raw.score ?? raw.value);
   }
   if (definition.inputMode === "SCORE") return { score: clamp(raw.score ?? raw.value, definition.minScore ?? 0, definition.maxScore ?? 180), finish: raw.finish === true };
   if (definition.inputMode === "X01") return {
