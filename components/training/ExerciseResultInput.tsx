@@ -20,6 +20,7 @@ type ExerciseState = {
   lives?: number;
   opened?: boolean;
   phase?: string;
+  opponentScore?: number;
   playerName?: string;
   trainingName?: string;
 };
@@ -53,7 +54,11 @@ function formatTime(totalSeconds: number) {
 }
 
 function payloadSummary(payload: Record<string, unknown>) {
-  if (Array.isArray(payload.segmentHits)) return `${payload.segmentHits.filter(Boolean).join(", ") || "0 Treffer"} gespeichert`;
+  if (payload.gotcha === true) return "Aufnahme gespeichert · Gegner auf 0 gesetzt";
+  if (Array.isArray(payload.hitSegments) || Array.isArray(payload.segmentHits)) {
+    const values = (Array.isArray(payload.hitSegments) ? payload.hitSegments : payload.segmentHits as unknown[]).filter(Boolean);
+    return `${values.join(", ") || "0 Treffer"} gespeichert`;
+  }
   if (typeof payload.score === "number") return `${payload.score} Punkte gespeichert`;
   if (typeof payload.hits === "number") return `${payload.hits} Treffer gespeichert`;
   if (typeof payload.checkout === "boolean") return payload.checkout ? `Checkout in ${payload.dartsUsed ?? "–"} Darts` : "Fehlversuch gespeichert";
@@ -84,11 +89,10 @@ function modeLabel(mode: string, kind: string) {
 
 function segmentValue(label: string) {
   const value = label.toUpperCase();
+  if (value === "DBULL") return 50;
   const number = Number(value.slice(1));
   if (!Number.isFinite(number)) return 0;
-  if (value.startsWith("D")) return number * 2;
-  if (value.startsWith("T")) return number * 3;
-  return 0;
+  return number * (value.startsWith("D") ? 2 : value.startsWith("T") ? 3 : 0);
 }
 
 export default function ExerciseResultInput({
@@ -119,6 +123,7 @@ export default function ExerciseResultInput({
   const [marks, setMarks] = useState(0);
   const [points, setPoints] = useState(0);
   const [halveDarts, setHalveDarts] = useState(["", "", ""]);
+  const [opponentScore, setOpponentScore] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [submitting, setSubmitting] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
@@ -140,7 +145,16 @@ export default function ExerciseResultInput({
   const catch40Target = Math.max(40, Math.min(170, Math.trunc(Number(state?.target ?? config.target ?? config.startTarget ?? 40))));
   const catch40Darts = catch40DartLimit(catch40Target);
   const catch40MaxScore = catch40Darts * 60;
-  const scoreInvalid = numericScore !== null && (!Number.isInteger(numericScore) || numericScore < 0 || (kind === "CATCH_40" ? numericScore > catch40MaxScore : numericScore > 180 || IMPOSSIBLE_SCORES.has(numericScore)));
+  const fixedCheckoutTarget = Math.max(2, Math.min(170, Math.trunc(Number(state?.target ?? config.target ?? 170))));
+  const scoreInvalid = numericScore !== null && (
+    !Number.isInteger(numericScore)
+    || numericScore < 0
+    || (kind === "CATCH_40"
+      ? numericScore > catch40MaxScore
+      : kind === "FIXED_CHECKOUT"
+        ? numericScore > fixedCheckoutTarget
+        : numericScore > 180 || IMPOSSIBLE_SCORES.has(numericScore))
+  );
 
   function resetEntry() {
     setScore(""); setSingle(0); setDouble(0); setTriple(0); setCheckout(false); setCheckoutType("NONE"); setDoubleIn(false); setDartsUsed(1); setMarks(0); setPoints(0); setHalveDarts(["", "", ""]);
@@ -153,7 +167,10 @@ export default function ExerciseResultInput({
   }
 
   useEffect(() => { timeoutSent.current = false; }, [state?.deadlineAt, state?.visit]);
-  useEffect(() => { resetEntry(); setFeedback(null); }, [state?.visit, state?.target]);
+  useEffect(() => {
+    resetEntry(); setFeedback(null);
+    if (state?.opponentScore != null) setOpponentScore(String(state.opponentScore));
+  }, [state?.visit, state?.target, state?.opponentScore]);
   useEffect(() => {
     if (completionMode !== "TIME_LIMIT" || !state?.deadlineAt) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -174,6 +191,7 @@ export default function ExerciseResultInput({
       showFeedback({ tone: "success", title: "Gespeichert", detail: payloadSummary(payload) });
       setSuccessPulse(true); window.setTimeout(() => setSuccessPulse(false), 480);
       if (reset && !payload.finish) resetEntry();
+      if (payload.gotcha === true) setOpponentScore("0");
       window.requestAnimationFrame(() => scoreRef.current?.focus());
     } catch (error) {
       showFeedback({ tone: "error", title: "Nicht gespeichert", detail: error instanceof Error ? error.message : "Bitte erneut versuchen." });
@@ -212,15 +230,34 @@ export default function ExerciseResultInput({
   if (kind === "HALVE_IT" && (halveTarget === "D" || halveTarget === "T")) {
     const prefix = halveTarget;
     const options = Array.from({ length: 20 }, (_, index) => `${prefix}${index + 1}`);
+    if (prefix === "D") options.push("DBull");
     const chosen = halveDarts.filter(Boolean);
     const visitScore = chosen.reduce((sum, item) => sum + segmentValue(item), 0);
     currentTarget = prefix === "D" ? "Beliebiges Doppel" : "Beliebiges Triple";
-    currentTargetCopy = prefix === "D" ? "D1–D20" : "T1–T20";
+    currentTargetCopy = prefix === "D" ? "D1–D20 oder DBull" : "T1–T20";
     module = <>
       <div className="vdcx-mini-stats"><div><span>Ziel</span><strong>{prefix}</strong></div><div><span>Treffer</span><strong>{chosen.length} / 3</strong></div><div><span>Punkte</span><strong>{visitScore}</strong></div></div>
       <div className="vdcx-segment-grid">{halveDarts.map((value, index) => <label className="vdcx-field" key={index}><span>Dart {index + 1}</span><select disabled={locked} value={value} onChange={(event) => setHalveDarts((old) => old.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}><option value="">Fehlwurf</option>{options.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>)}</div>
       <Guidance tone={chosen.length === 0 ? "warning" : "info"}>{chosen.length === 0 ? "Kein Treffer: Der bisherige Gesamtscore wird halbiert." : `Getroffen: ${chosen.join(", ")} · ${visitScore} Punkte.`}</Guidance>
-      <PrimaryButton disabled={locked} busy={submitting} onClick={() => void dispatch({ segmentHits: chosen, hits: chosen.length, single: 0, double: prefix === "D" ? chosen.length : 0, triple: prefix === "T" ? chosen.length : 0 })}>Aufnahme speichern</PrimaryButton>
+      <PrimaryButton disabled={locked} busy={submitting} onClick={() => void dispatch({ hitSegments: halveDarts, segmentHits: halveDarts, hits: chosen.length, single: 0, double: prefix === "D" ? chosen.length : 0, triple: prefix === "T" ? chosen.length : 0, visitScore })}>Aufnahme speichern</PrimaryButton>
+    </>;
+  } else if (kind === "JDC_CHALLENGE") {
+    const phase = state?.phase ?? "SHANGHAI_10_15";
+    const doublesPhase = phase === "DOUBLES";
+    currentValue = state?.score ?? 0;
+    valueLabel = "Gesamtpunkte";
+    currentTarget = state?.target ?? (doublesPhase ? "D1" : "10");
+    currentTargetCopy = doublesPhase ? "1 Dart auf das aktuelle Doppel" : `Shanghai ${phase === "SHANGHAI_15_20" ? "15–20" : "10–15"}`;
+    module = doublesPhase ? <>
+      <div className="vdcx-mini-stats"><div><span>Phase</span><strong>Doppel 1–20 + Bull</strong></div><div><span>Aktuelles Ziel</span><strong>{state?.target ?? "D1"}</strong></div><div><span>Gesamtscore</span><strong>{state?.score ?? 0}</strong></div></div>
+      <div className="vdcx-choice-grid"><button type="button" disabled={locked} onClick={() => void dispatch({ hits: 0 })}><strong>0</strong><span>Verfehlt</span></button><button type="button" disabled={locked} onClick={() => void dispatch({ hits: 1 })}><strong>1</strong><span>Getroffen</span></button></div>
+      <Guidance tone="info">Jedes Doppel gibt 50 Punkte. Inner Bull am Ende gibt 100 Punkte.</Guidance>
+    </> : <>
+      <div className="vdcx-mini-stats"><div><span>Phase</span><strong>{phase === "SHANGHAI_15_20" ? "Shanghai 15–20" : "Shanghai 10–15"}</strong></div><div><span>Aktuelles Ziel</span><strong>{state?.target ?? "–"}</strong></div><div><span>Gesamtscore</span><strong>{state?.score ?? 0}</strong></div></div>
+      <div className="vdcx-segment-grid">{[["Single", single, setSingle], ["Doppel", double, setDouble], ["Treble", triple, setTriple]].map(([label, value, setter]) => <div className="vdcx-segment-control" key={String(label)}><span>{String(label)}</span><div><button type="button" disabled={locked || Number(value) <= 0} onClick={() => (setter as (n: number) => void)(Math.max(0, Number(value) - 1))}>−</button><strong>{Number(value)}</strong><button type="button" disabled={locked || usedDarts >= 3} onClick={() => (setter as (n: number) => void)(Number(value) + 1)}>+</button></div></div>)}</div>
+      <div className={`vdcx-balance ${usedDarts === 3 ? "is-ready" : ""}`}><span>Treffer auf Zielzahl</span><strong>{usedDarts} / 3</strong></div>
+      <Guidance tone={single > 0 && double > 0 && triple > 0 ? "info" : "neutral"}>{single > 0 && double > 0 && triple > 0 ? "Shanghai! Zusätzlich werden 100 Bonuspunkte gewertet." : "Nur Treffer auf die aktuelle Zielzahl zählen. 0 Treffer ist gültig."}</Guidance>
+      <PrimaryButton disabled={locked || usedDarts > 3} busy={submitting} onClick={() => void dispatch({ single, double, triple, hits: usedDarts })}>JDC-Aufnahme speichern</PrimaryButton>
     </>;
   } else if (definition.inputMode === "HITS") {
     module = <div className="vdcx-choice-grid">{Array.from({ length: definition.dartsPerVisit + 1 }, (_, hits) => <button type="button" disabled={locked} key={hits} onClick={() => void dispatch({ hits })}><strong>{hits}</strong><span>{hits === 0 ? "Keine Treffer" : "Treffer"}</span></button>)}</div>;
@@ -240,18 +277,17 @@ export default function ExerciseResultInput({
   } else if (definition.inputMode === "CHECKOUT") {
     const maxDarts = definition.maxDarts ?? 3;
     const needsScore = kind === "GAME_121" || kind === "FIXED_CHECKOUT";
-    const finishTarget = Math.max(2, Number(state?.target ?? config.target ?? 170));
-    const fixedScoreInvalid = kind === "FIXED_CHECKOUT" && numericScore !== null && (!Number.isInteger(numericScore) || numericScore < 0 || numericScore > 180);
+    const finishTarget = kind === "FIXED_CHECKOUT" ? fixedCheckoutTarget : Math.max(2, Number(state?.target ?? config.target ?? 170));
     const successMismatch = kind === "FIXED_CHECKOUT" && checkout && numericScore !== finishTarget;
     currentValue = state?.successes ?? 0; valueLabel = "Erfolge"; currentTarget = state?.target ?? "–"; currentTargetCopy = `Checkout ${state?.target ?? "–"}`;
     const saveCheckout = () => needsScore ? submitScore({ checkout, dartsUsed }) : dispatch({ checkout, dartsUsed });
     module = <>
       <div className="vdcx-mini-stats"><div><span>Finish</span><strong>{state?.target ?? "–"}</strong></div><div><span>Darts im Versuch</span><strong>{state?.attemptDarts ?? 0} / {maxDarts}</strong></div><div><span>Erfolge</span><strong>{state?.successes ?? 0}</strong></div></div>
-      {needsScore && <ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void saveCheckout()} max={180} quickScores={kind === "FIXED_CHECKOUT" ? [0, 60, 100, 120, 140, 160, 170] : QUICK_SCORES} />}
+      {needsScore && <ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void saveCheckout()} max={kind === "FIXED_CHECKOUT" ? finishTarget : 180} quickScores={kind === "FIXED_CHECKOUT" ? [0, 60, 100, 120, 140, 160, finishTarget] : QUICK_SCORES} placeholder={`0–${kind === "FIXED_CHECKOUT" ? finishTarget : 180}`} />}
       <div className="vdcx-toggle-grid"><Toggle active={!checkout} disabled={locked} onClick={() => setCheckout(false)}>Nicht geschafft</Toggle><Toggle active={checkout} success disabled={locked} onClick={() => setCheckout(true)}>Checkout geschafft</Toggle></div>
       <DartsSelector value={dartsUsed} max={maxDarts} disabled={locked} onChange={setDartsUsed} />
-      {kind === "FIXED_CHECKOUT" && <Guidance tone={fixedScoreInvalid || successMismatch ? "error" : numericScore === finishTarget ? "info" : "neutral"}>{fixedScoreInvalid ? "Bitte einen möglichen Score zwischen 0 und 180 eingeben." : successMismatch ? `Für „Checkout geschafft“ muss der Score exakt ${finishTarget} sein.` : numericScore === finishTarget ? `${finishTarget} erreicht – Checkout kann gespeichert werden.` : "Erzielten Score dieser Aufnahme eingeben."}</Guidance>}
-      <PrimaryButton disabled={locked || (needsScore && (numericScore === null || scoreInvalid || fixedScoreInvalid || successMismatch))} busy={submitting} onClick={() => void saveCheckout()}>Versuch speichern</PrimaryButton>
+      {kind === "FIXED_CHECKOUT" && <Guidance tone={scoreInvalid || successMismatch ? "error" : numericScore === finishTarget ? "info" : "neutral"}>{scoreInvalid ? `Score muss zwischen 0 und ${finishTarget} liegen.` : successMismatch ? `Für „Checkout geschafft“ muss der Score exakt ${finishTarget} sein.` : numericScore === finishTarget ? `${finishTarget} erreicht – Checkout kann gespeichert werden.` : "Erzielten Gesamtscore des 9-Dart-Versuchs eingeben."}</Guidance>}
+      <PrimaryButton disabled={locked || (needsScore && (numericScore === null || scoreInvalid || successMismatch))} busy={submitting} onClick={() => void saveCheckout()}>Versuch speichern</PrimaryButton>
     </>;
   } else if (definition.inputMode === "CRICKET") {
     const targets = Array.isArray(config.targets) ? config.targets : [15, 16, 17, 18, 19, 20, "BULL"];
@@ -260,35 +296,18 @@ export default function ExerciseResultInput({
   } else if (definition.inputMode === "KILLER") {
     const lives = state?.lives ?? Number(config.startLives ?? 3); currentValue = lives; valueLabel = "Leben"; currentTarget = state?.target ?? "Gegner"; currentTargetCopy = "Lebensstand verändern";
     module = <><div className="vdcx-choice-grid is-five">{[-3,-2,-1,0,1].map((value) => <button type="button" disabled={locked} key={value} onClick={() => void dispatch({ livesDelta: value })}><strong>{value > 0 ? `+${value}` : value}</strong><span>{value === 0 ? "Keine Änderung" : "Leben"}</span></button>)}</div><button type="button" className="vdcx-secondary" disabled={locked} onClick={() => void dispatch({ killer: true, livesDelta: 0 })}>Killerstatus aktivieren</button></>;
-  } else if (kind === "JDC_CHALLENGE") {
-    const phase = state?.phase ?? "SHANGHAI_10_15";
-    const doublesPhase = phase === "DOUBLES";
-    currentValue = state?.score ?? 0;
-    valueLabel = "Gesamtpunkte";
-    currentTarget = state?.target ?? (doublesPhase ? "D1" : "10");
-    currentTargetCopy = doublesPhase ? "1 Dart auf das aktuelle Doppel" : `Shanghai ${phase === "SHANGHAI_15_20" ? "15–20" : "10–15"}`;
-    module = doublesPhase ? <>
-      <div className="vdcx-mini-stats"><div><span>Phase</span><strong>Doppel 1–20 + Bull</strong></div><div><span>Aktuelles Ziel</span><strong>{state?.target ?? "D1"}</strong></div><div><span>Gesamtscore</span><strong>{state?.score ?? 0}</strong></div></div>
-      <div className="vdcx-choice-grid"><button type="button" disabled={locked} onClick={() => void dispatch({ hits: 0 })}><strong>0</strong><span>Verfehlt</span></button><button type="button" disabled={locked} onClick={() => void dispatch({ hits: 1 })}><strong>1</strong><span>Getroffen</span></button></div>
-      <Guidance tone="info">Jedes Doppel gibt 50 Punkte. Inner Bull am Ende gibt 100 Punkte.</Guidance>
-    </> : <>
-      <div className="vdcx-mini-stats"><div><span>Phase</span><strong>{phase === "SHANGHAI_15_20" ? "Shanghai 15–20" : "Shanghai 10–15"}</strong></div><div><span>Aktuelles Ziel</span><strong>{state?.target ?? "–"}</strong></div><div><span>Gesamtscore</span><strong>{state?.score ?? 0}</strong></div></div>
-      <div className="vdcx-segment-grid">{[["Single", single, setSingle], ["Doppel", double, setDouble], ["Treble", triple, setTriple]].map(([label, value, setter]) => <div className="vdcx-segment-control" key={String(label)}><span>{String(label)}</span><div><button type="button" disabled={locked || Number(value) <= 0} onClick={() => (setter as (n: number) => void)(Math.max(0, Number(value) - 1))}>−</button><strong>{Number(value)}</strong><button type="button" disabled={locked || usedDarts >= 3} onClick={() => (setter as (n: number) => void)(Number(value) + 1)}>+</button></div></div>)}</div>
-      <div className={`vdcx-balance ${usedDarts === 3 ? "is-ready" : ""}`}><span>Treffer auf Zielzahl</span><strong>{usedDarts} / 3</strong></div>
-      <Guidance tone={single > 0 && double > 0 && triple > 0 ? "info" : "neutral"}>{single > 0 && double > 0 && triple > 0 ? "Shanghai! Zusätzlich werden 100 Bonuspunkte gewertet." : "Nur Treffer auf die aktuelle Zielzahl zählen. 0 Treffer ist gültig."}</Guidance>
-      <PrimaryButton disabled={locked || usedDarts > 3} busy={submitting} onClick={() => void dispatch({ single, double, triple, hits: usedDarts })}>JDC-Aufnahme speichern</PrimaryButton>
-    </>;
   } else if (definition.inputMode === "BOARD_GAME") {
     const targets = Array.isArray(config.targets) ? config.targets : []; currentTarget = state?.target ?? targets[0] ?? exerciseName; currentTargetCopy = "Aktuelles Spielfeld";
     module = <div className="vdcx-target-grid">{targets.map((item) => <button type="button" disabled={locked} key={String(item)} onClick={() => void dispatch({ target: String(item) })}>{String(item)}</button>)}</div>;
   } else if (kind === "COUNT_UP") {
-    const ownBefore = state?.score ?? 0; const targetScore = Number(config.target ?? 301); const total = numericScore === null ? null : ownBefore + numericScore; const bust = total !== null && total > targetScore; const ownAfter = bust ? ownBefore : total;
+    const ownBefore = state?.score ?? 0; const targetScore = Number(config.target ?? 301); const opponent = opponentScore === "" ? null : Number(opponentScore); const total = numericScore === null ? null : ownBefore + numericScore; const bust = total !== null && total > targetScore; const ownAfter = bust ? ownBefore : total; const gotcha = ownAfter !== null && opponent !== null && opponent > 0 && ownAfter === opponent;
     currentValue = ownBefore; valueLabel = "Eigener Stand"; currentTarget = targetScore; currentTargetCopy = "Exakt erreichen";
     module = <>
-      <div className="vdcx-mini-stats"><div><span>Eigener Stand</span><strong>{ownBefore}</strong></div><div><span>Ziel</span><strong>{targetScore}</strong></div><div><span>Regel</span><strong>Gotcha aktiv</strong></div></div>
-      <ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void submitScore()} />
-      <Guidance tone={bust ? "warning" : total !== null ? "info" : "neutral"}>{bust ? `Überworfen: Du bleibst bei ${ownBefore}.` : total !== null ? `Neuer eigener Stand: ${ownAfter}. Triffst du damit exakt einen Gegnerstand, wird dieser automatisch auf 0 gesetzt.` : "Score eingeben. Gegnerstände werden von der Engine automatisch geprüft."}</Guidance>
-      <PrimaryButton disabled={locked || numericScore === null || scoreInvalid} busy={submitting} onClick={() => void submitScore()}>Gotcha-Aufnahme speichern</PrimaryButton>
+      <div className="vdcx-mini-stats"><div><span>Eigener Stand</span><strong>{ownBefore}</strong></div><div><span>Gegner</span><strong>{opponent ?? state?.opponentScore ?? 0}</strong></div><div><span>Ziel</span><strong>{targetScore}</strong></div></div>
+      <ScoreInput ref={scoreRef} value={score} onChange={setScore} disabled={locked} onSubmit={() => void submitScore({ opponentScore: opponent ?? 0, gotcha })} />
+      <label className="vdcx-field"><span>Aktueller Gegnerstand</span><input disabled={locked} type="number" min="0" max={targetScore} inputMode="numeric" value={opponentScore} onChange={(event) => setOpponentScore(event.target.value)} placeholder="0–301" /></label>
+      <Guidance tone={gotcha ? "info" : bust ? "warning" : "neutral"}>{gotcha ? `Gotcha! Dein neuer Stand ${ownAfter} trifft den Gegner exakt – Gegner wird auf 0 gesetzt.` : bust ? `Überworfen: Du bleibst bei ${ownBefore}.` : total !== null ? `Neuer eigener Stand: ${ownAfter}.` : "Score und aktuellen Gegnerstand eingeben. 0 ist als Gegnerstand zulässig."}</Guidance>
+      <PrimaryButton disabled={locked || numericScore === null || scoreInvalid || opponent === null || opponent < 0 || opponent > targetScore} busy={submitting} onClick={() => void submitScore({ opponentScore: opponent, gotcha })}>Gotcha-Aufnahme speichern</PrimaryButton>
     </>;
   } else if (kind === "CATCH_40") {
     currentValue = state?.score ?? 0; valueLabel = "Punkte"; currentTarget = catch40Target; currentTargetCopy = `Catch 40 · ${catch40Darts} Darts`;
