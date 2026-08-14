@@ -119,7 +119,31 @@ export async function POST(request: Request) {
 
     const normalizedValue = normalizeEngineVisit(currentState.kind, currentState.engineConfig ?? currentPlanExercise.exercise.resultConfigJson, body.value);
     const applied = applyVisit(currentPlanExercise.exercise, currentState, normalizedValue);
-    const updatedStates = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
+    let updatedStates: Record<string, PlayerExerciseState> = { ...progress.playerStates, [String(currentPlayerId)]: applied.nextState };
+    const gotchaResetPlayerIds: number[] = [];
+    const gotchaEnabled = currentState.kind === "COUNT_UP" && currentState.engineConfig?.gotcha === true;
+
+    if (gotchaEnabled && !applied.nextState.completed && (applied.nextState.score ?? 0) > 0) {
+      const ownScore = applied.nextState.score ?? 0;
+      for (const opponentId of progress.order) {
+        if (opponentId === currentPlayerId) continue;
+        const opponentState = updatedStates[String(opponentId)] ?? createInitialExerciseState(currentPlanExercise.exercise);
+        if (!opponentState.completed && opponentState.score === ownScore) {
+          updatedStates[String(opponentId)] = { ...opponentState, score: 0, completed: false };
+          gotchaResetPlayerIds.push(opponentId);
+        }
+      }
+    }
+
+    if (gotchaEnabled && applied.nextState.completed) {
+      updatedStates = Object.fromEntries(
+        progress.order.map((playerId) => {
+          const playerState = updatedStates[String(playerId)] ?? createInitialExerciseState(currentPlanExercise.exercise);
+          return [String(playerId), { ...playerState, completed: true }];
+        }),
+      );
+    }
+
     const allPlayersFinished = progress.order.every((playerId) => Boolean(updatedStates[String(playerId)]?.completed));
 
     let completed = false;
@@ -153,7 +177,12 @@ export async function POST(request: Request) {
     };
     const nextExercise = completed ? null : planExercises[nextExerciseIndex];
     const nextPlayerId = completed ? null : nextOrder[nextPlayerIndex];
-    const storedValue = { ...applied.visitValue, normalizedInput: normalizedValue, progressBefore: progress } as Prisma.InputJsonValue;
+    const storedValue = {
+      ...applied.visitValue,
+      ...(gotchaResetPlayerIds.length ? { gotchaResetPlayerIds } : {}),
+      normalizedInput: normalizedValue,
+      progressBefore: progress,
+    } as Prisma.InputJsonValue;
     const completedAt = completed ? new Date() : null;
     const nextProgressJson = nextProgress as Prisma.InputJsonValue;
 
@@ -204,6 +233,7 @@ export async function POST(request: Request) {
       nextPlayerId,
       nextProgress,
       state: applied.nextState,
+      gotchaResetPlayerIds,
       report,
     });
   } catch (error) {
