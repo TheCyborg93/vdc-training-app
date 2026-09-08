@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import PwaRegister from "@/components/pwa-register";
 import AppShell from "@/components/app-shell";
 import Providers from "./providers";
 import "./globals.css";
@@ -39,14 +40,35 @@ import "./vdc-notifications.css";
 import "./vdc-monitoring.css";
 
 export const metadata: Metadata = {
-  title: "VDC Training OS",
+  title: {
+    default: "VDC Training OS",
+    template: "%s · VDC Training",
+  },
   description: "Digitale Trainingsplattform des Vestischen Dart Club e.V.",
+  applicationName: "VDC Training OS",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "VDC Training",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#b91c1c",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="de">
       <body>
+        <PwaRegister />
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>
