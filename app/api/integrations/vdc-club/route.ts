@@ -19,6 +19,12 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function homePlanExerciseCount(value: unknown): number {
+  return Array.isArray(value)
+    ? value.filter((item) => item && typeof item === "object" && Number.isInteger(Number((item as { exerciseId?: unknown }).exerciseId))).length
+    : 0;
+}
+
 function average(values: number[]): number | null {
   if (!values.length) return null;
   return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
@@ -58,7 +64,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [trainingDays, players, trainingPlans] = await Promise.all([
+    const [trainingDays, players, trainingPlans, homeTrainingPlans] = await Promise.all([
       prisma.trainingDay.findMany({
         where: {
           status: { in: ["PUBLISHED", "RUNNING", "COMPLETED"] },
@@ -107,6 +113,32 @@ export async function GET(request: Request) {
               id: true,
               status: true,
               trainingDate: true,
+            },
+          },
+        },
+      }),
+      prisma.homeTrainingPlan.findMany({
+        orderBy: { updatedAt: "desc" },
+        include: {
+          player: {
+            select: {
+              id: true,
+              displayName: true,
+              active: true,
+            },
+          },
+          sessions: {
+            where: {
+              status: { in: ["RUNNING", "PAUSED"] },
+            },
+            orderBy: { updatedAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              exerciseIndex: true,
+              startedAt: true,
+              updatedAt: true,
             },
           },
         },
@@ -172,6 +204,28 @@ export async function GET(request: Request) {
         };
       })
       .filter((plan) => plan.status !== "DRAFT");
+
+    const personalPlans = homeTrainingPlans
+      .filter((plan) => plan.player.active)
+      .map((plan) => ({
+        id: plan.id,
+        playerId: plan.player.id,
+        playerName: plan.player.displayName,
+        title: plan.title,
+        goal: plan.goal,
+        durationMin: plan.durationMin,
+        exerciseCount: homePlanExerciseCount(plan.planJson),
+        updatedAt: plan.updatedAt.toISOString(),
+        activeSession: plan.sessions[0]
+          ? {
+              id: plan.sessions[0].id,
+              status: plan.sessions[0].status,
+              exerciseIndex: plan.sessions[0].exerciseIndex,
+              startedAt: plan.sessions[0].startedAt.toISOString(),
+              updatedAt: plan.sessions[0].updatedAt.toISOString(),
+            }
+          : null,
+      }));
 
     const statistics = players.map((player) => {
       const scoredResults = player.results
@@ -267,10 +321,11 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         ok: true,
-        version: 3,
+        version: 4,
         generatedAt: new Date().toISOString(),
         trainingDays: days,
         trainingPlans: libraryPlans,
+        homeTrainingPlans: personalPlans,
         playerStatistics: statistics,
       },
       {
