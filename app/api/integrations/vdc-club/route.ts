@@ -24,6 +24,17 @@ function average(values: number[]): number | null {
   return Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2));
 }
 
+function weekKey(value: Date): string {
+  const monday = new Date(Date.UTC(
+    value.getUTCFullYear(),
+    value.getUTCMonth(),
+    value.getUTCDate(),
+  ));
+  const day = monday.getUTCDay() || 7;
+  monday.setUTCDate(monday.getUTCDate() - day + 1);
+  return monday.toISOString().slice(0, 10);
+}
+
 export async function GET(request: Request) {
   const expectedToken = process.env.VDC_CLUB_SYNC_TOKEN?.trim();
 
@@ -138,6 +149,53 @@ export async function GET(request: Request) {
           : [];
       });
 
+      const weekly = new Map<string, {
+        scoring: number[];
+        checkoutAttempts: number;
+        checkoutSuccesses: number;
+        results: number;
+      }>();
+
+      for (const result of player.results) {
+        const key = weekKey(result.createdAt);
+        const bucket = weekly.get(key) ?? {
+          scoring: [],
+          checkoutAttempts: 0,
+          checkoutSuccesses: 0,
+          results: 0,
+        };
+
+        bucket.results += 1;
+
+        if (result.exercise.resultType === "SCORE_0_TO_180") {
+          const visits = asRecord(result.valueJson).visits;
+          if (Array.isArray(visits)) {
+            bucket.scoring.push(...visits.map(Number).filter(Number.isFinite));
+          }
+        }
+
+        if (result.exercise.resultType === "CHECKOUT") {
+          bucket.checkoutAttempts += 1;
+          if (Boolean(asRecord(result.valueJson).success)) {
+            bucket.checkoutSuccesses += 1;
+          }
+        }
+
+        weekly.set(key, bucket);
+      }
+
+      const trend = [...weekly.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .slice(-12)
+        .map(([week, bucket]) => ({
+          week,
+          scoringAverage: average(bucket.scoring),
+          checkoutRate: bucket.checkoutAttempts
+            ? Number(((bucket.checkoutSuccesses / bucket.checkoutAttempts) * 100).toFixed(1))
+            : null,
+          results: bucket.results,
+        }));
+
       return {
         id: player.id,
         displayName: player.displayName,
@@ -152,13 +210,14 @@ export async function GET(request: Request) {
         scores100: scoringVisits.filter((value) => value >= 100).length,
         scores140: scoringVisits.filter((value) => value >= 140).length,
         scores180: scoringVisits.filter((value) => value === 180).length,
+        trend,
       };
     });
 
     return NextResponse.json(
       {
         ok: true,
-        version: 1,
+        version: 2,
         generatedAt: new Date().toISOString(),
         trainingDays: days,
         playerStatistics: statistics,
