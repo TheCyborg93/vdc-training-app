@@ -123,7 +123,18 @@ export default function HomeTrainingPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedPlayerId = Number(params.get("playerId"));
+
+    if (Number.isInteger(requestedPlayerId) && requestedPlayerId > 0) {
+      setPlayerId(requestedPlayerId);
+      void load(requestedPlayerId);
+      return;
+    }
+
+    void load();
+  }, []);
 
   const planItems = useMemo(() => activePlan ? readItems(activePlan.planJson) : [], [activePlan]);
   const currentItem = planItems[exerciseIndex];
