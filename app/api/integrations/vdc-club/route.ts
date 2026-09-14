@@ -58,7 +58,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [trainingDays, players] = await Promise.all([
+    const [trainingDays, players, trainingPlans] = await Promise.all([
       prisma.trainingDay.findMany({
         where: {
           status: { in: ["PUBLISHED", "RUNNING", "COMPLETED"] },
@@ -95,6 +95,22 @@ export async function GET(request: Request) {
           },
         },
       }),
+      prisma.trainingPlan.findMany({
+        orderBy: { updatedAt: "desc" },
+        include: {
+          exercises: {
+            orderBy: { position: "asc" },
+            include: { exercise: true },
+          },
+          trainingDays: {
+            select: {
+              id: true,
+              status: true,
+              trainingDate: true,
+            },
+          },
+        },
+      }),
     ]);
 
     const days = trainingDays.map((day) => ({
@@ -122,6 +138,40 @@ export async function GET(request: Request) {
         name: entry.board.name,
       })),
     }));
+
+    const libraryPlans = trainingPlans
+      .map((plan) => {
+        const effectiveStatus = plan.trainingDays.some((day) => day.status === "COMPLETED")
+          ? "ARCHIVED"
+          : plan.status;
+        const usedDays = plan.trainingDays.filter((day) => day.status !== "CANCELLED");
+        const completedUses = plan.trainingDays.filter((day) => day.status === "COMPLETED").length;
+        const lastUsedAt = usedDays.length
+          ? [...usedDays]
+              .sort((left, right) => right.trainingDate.getTime() - left.trainingDate.getTime())[0]
+              ?.trainingDate.toISOString() ?? null
+          : null;
+
+        return {
+          id: plan.id,
+          title: plan.title,
+          goal: plan.goal,
+          durationMin: plan.durationMin,
+          status: effectiveStatus,
+          exerciseCount: plan.exercises.length,
+          usageCount: usedDays.length,
+          completedUses,
+          lastUsedAt,
+          updatedAt: plan.updatedAt.toISOString(),
+          exercises: plan.exercises.map((item) => ({
+            id: item.exercise.id,
+            name: item.exercise.name,
+            durationMin: item.durationMin,
+            position: item.position,
+          })),
+        };
+      })
+      .filter((plan) => plan.status !== "DRAFT");
 
     const statistics = players.map((player) => {
       const scoredResults = player.results
@@ -217,9 +267,10 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         ok: true,
-        version: 2,
+        version: 3,
         generatedAt: new Date().toISOString(),
         trainingDays: days,
+        trainingPlans: libraryPlans,
         playerStatistics: statistics,
       },
       {
